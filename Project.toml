@@ -1,0 +1,9 @@
+name = "DifferentiableObjects"
+uuid = "e829a12a-7dbf-11e8-18a8-f94f525a9d85"
+authors = ["chriselrod <elrodc@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+LineSearches = "d3d80556-e9d4-5f37-9878-2ab0fcc64255"
+TriangularMatrices = "5ebe76dc-7dd7-11e8-2992-2706ab89a682"
