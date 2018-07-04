@@ -27,7 +27,28 @@
 # > CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # > SOFTWARE.
 
+# mutable struct
+abstract type Manifold end
+struct ManifoldObjective{P, T<:DifferentiableObject{P}} <: DifferentiableObject{P}
+    manifold::Manifold
+    inner_obj::T
+end
+"""Flat Euclidean space {R,C}^N, with projections equal to the identity."""
+struct Flat <: Manifold end
+@inline retract(M::Flat, x) = x
+@inline retract!(M::Flat,x) = x
+@inline project_tangent(M::Flat, g, x) = g
+@inline project_tangent!(M::Flat, g, x) = g
+"""Spherical manifold {|x| = 1}."""
+struct Sphere <: Manifold end
+@inline retract!(S::Sphere, x) = normalize!(x)
+@inline project_tangent!(S::Sphere,g,x) = (g .-= real(vecdot(x,g)).*x)
+
+
+
+
 abstract type AbstractOptimizer end
+abstract type AbstractOptimizerState end
 abstract type FirstOrderOptimizer <: AbstractOptimizer end
 
 @with_kw struct BFGS{IL, L, H<:Function} <: FirstOrderOptimizer
@@ -39,10 +60,10 @@ end
 
 # Base.summary(::BFGS) = "BFGS"
 
-function initial_diaginvH(::RecursiveVector{T,L}, α::T = one(T)) where {T,L}
-    H = SymmetricMatrix{T,L}()
+function initial_diaginvH(::RecursiveVector{T,P}, α::T = one(T)) where {T,P}
+    H = SymmetricMatrix{T,P}()
     ind = 0
-    for i = 1:L
+    @inbounds for i = 1:P
         for j ∈ 1:i-1
             ind += 1
             H[ind] = zero(T)
@@ -52,9 +73,9 @@ function initial_diaginvH(::RecursiveVector{T,L}, α::T = one(T)) where {T,L}
     end
     H
 end
-function initial_diaginvH((H,V)::Tuple{SymmetricMatrix{T,N,L},RecursiveVector{T,N}}, α = one(T)) where {T,N,L}
+function initial_diaginvH((H,V)::Tuple{SymmetricMatrix{T,P,L},RecursiveVector{T,P}}, α = one(T)) where {T,P,L}
     ind = 0
-    for i = 1:L
+    @inbounds for i = 1:P
         for j ∈ 1:i-1
             ind += 1
             H[ind] = zero(T)
@@ -65,22 +86,21 @@ function initial_diaginvH((H,V)::Tuple{SymmetricMatrix{T,N,L},RecursiveVector{T,
     H
 end
 
-mutable struct BFGSState{Tx, Tm, T,G} <: AbstractOptimizerState
-    x::Tx
-    x_previous::Tx
-    g_previous::G
+mutable struct BFGSState{P,T,L} <: AbstractOptimizerState
+    x::RecursiveVector{T,P}
+    x_previous::RecursiveVector{T,P}
+    g_previous::RecursiveVector{T,P}
     f_x_previous::T
-    dx::Tx
-    dg::Tx
-    u::Tx
-    invH::Tm
-    s::Tx
-    x_ls::Tx
+    dx::RecursiveVector{T,P}
+    dg::RecursiveVector{T,P}
+    u::RecursiveVector{T,P}
+    invH::SymmetricMatrix{T,P,L}
+    s::RecursiveVector{T,P}
+    x_ls::RecursiveVector{T,P}
     alpha::T
 end
 
-function initial_state(method::BFGS, options, d, initial_x::AbstractArray{T}) where T
-    n = length(initial_x)
+function initial_state(method::BFGS{P}, options, d, initial_x::RecursiveVector{T,P}) where {T,P}
     initial_x = copy(initial_x)
     retract!(method.manifold, initial_x)
 
@@ -104,23 +124,6 @@ function initial_state(method::BFGS, options, d, initial_x::AbstractArray{T}) wh
     )
 end
 
-# mutable struct
-struct ManifoldObjective{T<:DifferentiableObject} <: DifferentiableObject
-    manifold::Manifold
-    inner_obj::T
-end
-abstract type Manifold end
-"""Flat Euclidean space {R,C}^N, with projections equal to the identity."""
-struct Flat <: Manifold end
-@inline retract(M::Flat, x) = x
-@inline retract!(M::Flat,x) = x
-@inline project_tangent(M::Flat, g, x) = g
-@inline project_tangent!(M::Flat, g, x) = g
-"""Spherical manifold {|x| = 1}."""
-struct Sphere <: Manifold end
-@inline retract!(S::Sphere, x) = normalize!(x)
-@inline project_tangent!(S::Sphere,g,x) = (g .-= real(vecdot(x,g)).*x)
-
 
 
 function reset_search_direction!(state, d, method::BFGS)
@@ -133,7 +136,7 @@ function update_state!(d, state::BFGSState, method::BFGS)
 
     # Set the search direction
     # Search direction is the negative gradient divided by the approximate Hessian
-    A_mul_B!(vec(state.s), state.invH, vec(gradient(d)))
+    mul!(vec(state.s), state.invH, vec(gradient(d)))
     scale!(state.s, -1)
     project_tangent!(method.manifold, state.s, state.x)
 
@@ -186,33 +189,48 @@ function perform_linesearch!(state, method, d)
 end
 
 
-
-function update_h!(d, state, method::BFGS)
-    n = length(state.x)
-    # Measure the change in the gradient
-    state.dg .= gradient(d) .- state.g_previous
-
-    # Update the inverse Hessian approximation using Sherman-Morrison
-    dx_dg = real(vecdot(state.dx, state.dg))
-    if dx_dg == 0.0
-        return true # force stop
-    end
-    A_mul_B!(vec(state.u), state.invH, vec(state.dg))
-
-    c1 = (dx_dg + real(vecdot(state.dg, state.u))) / (dx_dg' * dx_dg)
-    c2 = 1 / dx_dg
-
-    # TODO BLASify this
-    # invH = invH + c1 * (s * s') - c2 * (u * s' + s * u')
-    for i in 1:n
-        @simd for j in 1:n
-            @inbounds state.invH[i, j] += c1 * state.dx[i] * state.dx[j]' - c2 * (state.u[i] * state.dx[j]' + state.u[j]' * state.dx[i])
+@generated function update_h!(d, state, method::BFGS{P,T}) where {P,T}
+    q, qa = TriangularMatrices.create_quote()
+    #
+    ind = 0
+    if P > 10
+        for i ∈ 1:P, j ∈ 1:i
+            ind += 1
+            push!(qa, :( state.invH[$ind] += c1 * state.dx[i] * state.dx[j]' - c2 * (state.u[i] * state.dx[j]' + state.u[j]' * state.dx[i]) ) ) 
         end
+    else
+        TriangularMatrices.extract_linear!(qa, P, :dx, :(state.dx))
+        TriangularMatrices.extract_linear!(qa, P, :u, :(state.u))
+        for i ∈ 1:P
+            dxi = Symbol(:dx_, i )
+            ui = Symbol(:u_, i )
+            for j ∈ 1:i
+                dxj = Symbol(:dx_, j )
+                ind += 1
+                push!(qa, :( state.invH[$ind] += c1 * $dxi * $dxj' - c2 * ($ui * $dxj' + $(Symbol(:u_, j ))' * $dxi) ) ) 
+            end
+        end
+    end
+
+    quote
+        # Measure the change in the gradient
+        state.dg .= gradient(d) .- state.g_previous
+
+        # Update the inverse Hessian approximation using Sherman-Morrison
+        dx_dg = real(dot(state.dx, state.dg))
+        if dx_dg == 0.0
+            return true # force stop
+        end
+        mul!(vec(state.u), state.invH, vec(state.dg))
+
+        c1 = (dx_dg + real(dot(state.dg, state.u))) / TriangularMatrices.abs2norm(dx_dg)
+        c2 = 1 / dx_dg
+        $q
     end
 end
 
-function maxdiff(x::AbstractArray, y::AbstractArray)
-    res = real(zero(x[1] - y[1]))
+function maxdiff(x::AbstractArray{T1}, y::AbstractArray{T2}) where {T1,T2}
+    res = real(zero(promote_type(T1,T2)))
     @inbounds for i in 1:length(x)
         delta = abs(x[i] - y[i])
         if delta > res
@@ -227,7 +245,7 @@ x_abschange(state) = x_abschange(state.x, state.x_previous)
 x_abschange(x, x_previous) = maxdiff(x, x_previous)
 g_residual(d::DifferentiableObject) = g_residual(gradient(d))
 gradient_convergence_assessment(state::AbstractOptimizerState, d, options) = g_residual(gradient(d)) ≤ options.g_tol
-gradient_convergence_assessment(state::ZerothOrderState, d, options) = false
+# gradient_convergence_assessment(state::ZerothOrderState, d, options) = false
 
 function assess_convergence(state::BFGSState, d, options)
   default_convergence_assessment(state, d, options)

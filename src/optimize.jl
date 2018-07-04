@@ -89,11 +89,11 @@ function uninitialized_state(initial_x::RecursiveVector{T,P}) where {T,P}
 end
 function initial_convergence(d, state, method::AbstractOptimizer, initial_x, options)
     gradient!(d, initial_x)
-    vecnorm(gradient(d), Inf) < options.g_tol
+    maximum(gradient(d)) < options.g_tol
 end
 
 function optimize_light(d::D, initial_x::Tx, method::M,
-                  options::Union{Options,LightOptions} = LightOptions(),
+                  options::LightOptions = LightOptions(),
                   state = initial_state(method, options, d, initial_x)) where {D<:DifferentiableObject, M<:AbstractOptimizer, Tx <: AbstractArray}
 
     f_limit_reached, g_limit_reached, h_limit_reached = false, false, false
@@ -121,10 +121,10 @@ end
 disallow_f_increases(options) = false
 # disallow_f_increases(options::Options) = options.allow_f_increases
 
-function update_g!(d, state, method::M) where M<:Union{FirstOrderOptimizer, Newton}
+function update_g!(d, state, method::M) where M <: FirstOrderOptimizer# Union{FirstOrderOptimizer, Newton}
     # Update the function value and gradient
     value_gradient!(d, state.x)
-    if M <: FirstOrderOptimizer #only for methods that support manifold optimization
-        project_tangent!(method.manifold, gradient(d), state.x)
-    end
+    # if M <: FirstOrderOptimizer #only for methods that support manifold optimization
+    project_tangent!(method.manifold, gradient(d), state.x)
+    # end
 end

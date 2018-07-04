@@ -8,6 +8,6 @@ initial_x = RecursiveVector{Float64,2}()
 initial_x .= 0;
 d = OnceDifferentiable(rosenbrock, initial_x)
 method = BFGS()
+options = LightOptions()
 
-result = optimize_light(d, initial_x, method, LightOptions(), initial_state(method, options, d, initial_x))
-result = optimize(rosenbrock, zeros(2), BFGS())
+result = optimize_light(d, initial_x, method, options, DifferentiableObjects.initial_state(method, options, d, initial_x))

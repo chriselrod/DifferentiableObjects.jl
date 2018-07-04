@@ -22,13 +22,13 @@ struct HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2} <: Configuration{P,V,F}
     gradient_config::ForwardDiff.GradientConfig{T,ForwardDiff.Dual{T,V,ND},ND,DG}
     gconfig::ForwardDiff.GradientConfig{T2,V,ND,DG2}
 end
-struct TwiceDifferentiable{P,T,F,C<:Configuration{T,F}} <: AutoDiffDifferentiable{P,T,F}
+struct TwiceDifferentiable{P,T,F,C<:Configuration{P,T,F}} <: AutoDiffDifferentiable{P,T,F}
     x_f::RecursiveVector{T,P} # x used to evaluate f (stored in F)
     x_df::RecursiveVector{T,P} # x used to evaluate df (stored in DF)
     x_h::RecursiveVector{T,P} #??
     config::C
 end
-struct OnceDifferentiable{P,T,F,C<:GradientConfiguration{T,F}} <: AutoDiffDifferentiable{P,T,F}
+struct OnceDifferentiable{P,T,F,C<:GradientConfiguration{P,T,F}} <: AutoDiffDifferentiable{P,T,F}
     x_f::RecursiveVector{T,P} # x used to evaluate f (stored in F)
     x_df::RecursiveVector{T,P} # x used to evaluate df (stored in DF)
     config::C
@@ -74,7 +74,7 @@ function OnceDifferentiable(x_f::RecursiveVector{T,P}, config::C) where {T,F,C<:
     OnceDifferentiable{P,T,F,C}(x_f, similar(x_f), config)
 end
 function OnceDifferentiable(x_f::RecursiveVector{T,P},x_df::RecursiveVector{T,P},
-                                config::C) where {T,F,C<:GradientConfiguration{T,F},P}
+                                config::C) where {T,P,F,C<:GradientConfiguration{P,T,F}}
     OnceDifferentiable{P,T,F,C}(x_f, x_df, config)
 end
 
@@ -107,7 +107,11 @@ end
 """
 For DynamicHMC support. Copies data.
 """
-function (obj::AutoDiffDifferentiable)(x)
+function (obj::OnceDifferentiable)(x)
+    fdf(obj, x)
+    DiffResults.ImmutableDiffResult(-obj.config.result.value, (-1 .* obj.config.result.derivs[1],))
+end
+function (obj::TwiceDifferentiable)(x)
     fdf(obj, x)
     DiffResults.ImmutableDiffResult(-obj.config.result.value, (-1 .* obj.config.result.derivs[1],))
 end

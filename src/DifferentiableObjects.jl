@@ -4,7 +4,8 @@ using   ForwardDiff,
         DiffResults,
         LineSearches,
         TriangularMatrices,
-        Parameters
+        Parameters,
+        LinearAlgebra
 
 
 export  OnceDifferentiable,
