@@ -16,7 +16,7 @@ end
 
 struct HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2,P2} <: Configuration{P,V,F}
     f::F
-    result::DiffResults.MutableDiffResult{2,V,Tuple{RecursiveVector{V,P},Symmetric{RecursiveMatrix{V,P,P,P2}}}}
+    result::DiffResults.MutableDiffResult{2,V,Tuple{RecursiveVector{V,P},Symmetric{V,RecursiveMatrix{V,P,P,P2}}}}
     inner_result::DiffResults.MutableDiffResult{1,ForwardDiff.Dual{T,V,ND},Tuple{RecursiveVector{ForwardDiff.Dual{T,V,ND},P}}}
     jacobian_config::ForwardDiff.JacobianConfig{T,V,ND,DJ}
     gradient_config::ForwardDiff.GradientConfig{T,ForwardDiff.Dual{T,V,ND},ND,DG}
