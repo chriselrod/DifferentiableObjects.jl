@@ -29,33 +29,76 @@
 
 # mutable struct
 abstract type Manifold end
-struct ManifoldObjective{P, T<:DifferentiableObject{P}} <: DifferentiableObject{P}
-    manifold::Manifold
+struct ManifoldObjective{M <: Manifold, P, T<:DifferentiableObject{P}} <: DifferentiableObject{P}
     inner_obj::T
 end
+function ManifoldObjective(::M, inner_obj::T) where {M <: Manifold, P, T <: DifferentiableObject{P}}
+    ManifoldObjective{M,P,T}(inner_obj)
+end
+# @inline function Base.getproperty(MO::ManifoldObjective{M}, s::Symbol) where M
+#     if s == :inner_obj
+#         return MO.inner_obj
+#     elseif s == :manifold
+#         return M
+#     end
+#     throw("ManifoldObjective has no field $s.")
+# end
+
 """Flat Euclidean space {R,C}^N, with projections equal to the identity."""
 struct Flat <: Manifold end
-@inline retract(M::Flat, x) = x
-@inline retract!(M::Flat,x) = x
-@inline project_tangent(M::Flat, g, x) = g
-@inline project_tangent!(M::Flat, g, x) = g
+ManifoldObjective(::Type{Flat}, inner_obj) = inner_obj
+@inline retract(::Type{Flat}, x) = x
+@inline retract!(::Type{Flat},x) = x
+@inline project_tangent(::Type{Flat}, g, x) = g
+@inline project_tangent!(::Type{Flat}, g, x) = g
 """Spherical manifold {|x| = 1}."""
 struct Sphere <: Manifold end
-@inline retract!(S::Sphere, x) = normalize!(x)
-@inline project_tangent!(S::Sphere,g,x) = (g .-= real(vecdot(x,g)).*x)
+@inline retract!(::Type{Sphere}, x) = normalize!(x)
+@inline project_tangent!(::Type{Sphere}, g, x) = (g .-= real(dot(x,g)).*x)
+# @inline gradient(m::ManifoldObjective) = gradient(m.inner_obj)
+function value!(obj::ManifoldObjective{M}, x) where M
+    xin = retract(M, x)
+    value!(obj.inner_obj, xin)
+end
+function value(obj::ManifoldObjective{M}) where M
+    value(obj.inner_obj)
+end
+function gradient(obj::ManifoldObjective{M}) where M
+    gradient(obj.inner_obj)
+end
+function gradient(obj::ManifoldObjective{M}, i::Int) where M
+    gradient(obj.inner_obj,i)
+end
+function gradient!(obj::ManifoldObjective{M},x) where M
+    xin = retract(M, x)
+    gradient!(obj.inner_obj,xin)
+    project_tangent!(M,gradient(obj.inner_obj),xin)
+    return gradient(obj.inner_obj)
+end
+function value_gradient!(obj::ManifoldObjective{M}, x) where M
+    xin = retract(M, x)
+    value_gradient!(obj.inner_obj,xin)
+    project_tangent!(M,gradient(obj.inner_obj),xin)
+    return value(obj.inner_obj)
+end
 
 
-
-
-abstract type AbstractOptimizer end
+abstract type AbstractOptimizer{M<:Manifold} end
 abstract type AbstractOptimizerState end
-abstract type FirstOrderOptimizer <: AbstractOptimizer end
+abstract type FirstOrderOptimizer{M} <: AbstractOptimizer{M} end
 
-@with_kw struct BFGS{IL, L, H<:Function} <: FirstOrderOptimizer
-    alphaguess!::IL = LineSearches.InitialStatic()
-    linesearch!::L = LineSearches.HagerZhang()
-    initial_invH::H = initial_diaginvH
-    manifold::Manifold = Flat()
+struct BFGS{M, IL, L, H<:Function} <: FirstOrderOptimizer{M}
+    alphaguess!::IL# = LineSearches.InitialStatic()
+    linesearch!::L# = LineSearches.HagerZhang()
+    initial_invH::H# = initial_diaginvH
+end
+function BFGS(;
+        alphaguess::IL = LineSearches.InitialStatic(),
+        linesearch::L = LineSearches.HagerZhang(),
+        initial_invH::H = initial_diaginvH,
+        manifold::M = Flat()
+    ) where {IL, L, H, M <: Manifold}
+    BFGS{M, IL, L, H}(alphaguess, linesearch, initial_invH)
 end
 
 # Base.summary(::BFGS) = "BFGS"
@@ -74,6 +117,8 @@ function initial_diaginvH(::RecursiveVector{T,P}, α::T = one(T)) where {T,P}
     H
 end
 function initial_diaginvH((H,V)::Tuple{SymmetricMatrix{T,P,L},RecursiveVector{T,P}}, α = one(T)) where {T,P,L}
+    # println("Resseting H.")
+    # @show H
     ind = 0
     @inbounds for i = 1:P
         for j ∈ 1:i-1
@@ -100,13 +145,13 @@ mutable struct BFGSState{P,T,L} <: AbstractOptimizerState
     alpha::T
 end
 
-function initial_state(method::BFGS{P}, options, d, initial_x::RecursiveVector{T,P}) where {T,P}
+function initial_state(method::BFGS{M}, options, d, initial_x::RecursiveVector{T,P}) where {M,T,P}
     initial_x = copy(initial_x)
-    retract!(method.manifold, initial_x)
+    retract!(M, initial_x)
 
     value_gradient!!(d, initial_x)
 
-    project_tangent!(method.manifold, gradient(d), initial_x)
+    project_tangent!(M, gradient(d), initial_x)
     # Maintain a cache for line search results
     # Trace the history of states visited
     BFGSState(
@@ -131,36 +176,44 @@ function reset_search_direction!(state, d, method::BFGS)
     state.s .= .-gradient(d)
     return true
 end
-function update_state!(d, state::BFGSState, method::BFGS)
-    n = length(state.x)
+function update_state!(d, state::BFGSState, method::BFGS{M, IL, L, H}) where {IL,L,H,M<:Manifold}
 
+    # @show state.s, state.invH, vec(gradient(d))
     # Set the search direction
     # Search direction is the negative gradient divided by the approximate Hessian
     mul!(vec(state.s), state.invH, vec(gradient(d)))
     scale!(state.s, -1)
-    project_tangent!(method.manifold, state.s, state.x)
+    # # @show state.s
+    project_tangent!(M, state.s, state.x)
+    # @show state.s, state.x
 
     # Maintain a record of the previous gradient
-    copy!(state.g_previous, gradient(d))
+    copyto!(state.g_previous, gradient(d))
 
     # Determine the distance of movement along the search line
     # This call resets invH to initial_invH is the former in not positive
     # semi-definite
-    lssuccess = perform_linesearch!(state, method, ManifoldObjective(method.manifold, d))
+    lssuccess = perform_linesearch!(state, method, ManifoldObjective(M, d))
+    # @show state.alpha, state.s
 
     # Update current position
     state.dx .= state.alpha.*state.s
     state.x .= state.x .+ state.dx
-    retract!(method.manifold, state.x)
+    retract!(M, state.x)
+    # @show state.x
 
     lssuccess == false # break on linesearch error
 end
 function perform_linesearch!(state, method, d)
     # Calculate search direction dphi0
-    dphi_0 = real(vecdot(gradient(d), state.s))
+    # # @show typeof(d)
+    # # @show @which gradient(d)
+    # @show gradient(d), state.s
+    dphi_0 = real(dot(gradient(d), state.s))
+    # @show dphi_0
     # reset the direction if it becomes corrupted
     if dphi_0 >= zero(dphi_0) && reset_search_direction!(state, d, method)
-        dphi_0 = real(vecdot(gradient(d), state.s)) # update after direction reset
+        dphi_0 = real(dot(gradient(d), state.s)) # update after direction reset
     end
     phi_0  = value(d)
 
@@ -169,7 +222,7 @@ function perform_linesearch!(state, method, d)
 
     # Store current x and f(x) for next iteration
     state.f_x_previous = phi_0
-    copy!(state.x_previous, state.x)
+    copyto!(state.x_previous, state.x)
 
     # Perform line search; catch LineSearchException to allow graceful exit
     try
@@ -189,7 +242,7 @@ function perform_linesearch!(state, method, d)
 end
 
 
-@generated function update_h!(d, state, method::BFGS{P,T}) where {P,T}
+@generated function update_h!(d, state::BFGSState{P,T}, method) where {P,T}
     q, qa = TriangularMatrices.create_quote()
     #
     ind = 0
@@ -216,16 +269,23 @@ end
         # Measure the change in the gradient
         state.dg .= gradient(d) .- state.g_previous
 
+        # @show gradient(d), state.g_previous, state.dg
         # Update the inverse Hessian approximation using Sherman-Morrison
         dx_dg = real(dot(state.dx, state.dg))
         if dx_dg == 0.0
             return true # force stop
         end
+        # @show dx_dg, state.invH
+        # @show state.u
         mul!(vec(state.u), state.invH, vec(state.dg))
 
-        c1 = (dx_dg + real(dot(state.dg, state.u))) / TriangularMatrices.abs2norm(dx_dg)
+        c1 = (dx_dg + real(dot(state.dg, state.u))) / (dx_dg' * dx_dg)
         c2 = 1 / dx_dg
+        # @show dx_dg, c1, c2
+        # @show state.dx
+        # @show state.u
         $q
+        # @show state.invH
     end
 end
 
@@ -244,11 +304,14 @@ f_abschange(f_x::T, f_x_previous) where T = abs(f_x - f_x_previous)
 x_abschange(state) = x_abschange(state.x, state.x_previous)
 x_abschange(x, x_previous) = maxdiff(x, x_previous)
 g_residual(d::DifferentiableObject) = g_residual(gradient(d))
-gradient_convergence_assessment(state::AbstractOptimizerState, d, options) = g_residual(gradient(d)) ≤ options.g_tol
+g_residual(g) = norm(g, Inf)
+function gradient_convergence_assessment(state::AbstractOptimizerState, d, options)
+    g_residual(gradient(d)) ≤ options.g_tol
+end
 # gradient_convergence_assessment(state::ZerothOrderState, d, options) = false
 
 function assess_convergence(state::BFGSState, d, options)
-  default_convergence_assessment(state, d, options)
+    default_convergence_assessment(state, d, options)
 end
 function default_convergence_assessment(state::AbstractOptimizerState, d, options)
     x_converged, f_converged, f_increased, g_converged = false, false, false, false
@@ -268,7 +331,6 @@ function default_convergence_assessment(state::AbstractOptimizerState, d, option
     if f_x > state.f_x_previous
         f_increased = true
     end
-
     g_converged = gradient_convergence_assessment(state,d,options)
 
     converged = x_converged || f_converged || g_converged

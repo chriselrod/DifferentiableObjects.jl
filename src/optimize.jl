@@ -50,12 +50,12 @@ LightOptions() = LightOptions{Float64}(0.0,0.0,1e-8)
 #     s::Tx
 #     @add_linesearch_fields()
 # end
-function initial_state!(state, method::BFGS, d, initial_x::AbstractArray{T}) where T
+function initial_state!(state, method::BFGS{M}, d, initial_x::AbstractArray{T}) where {T,M}
     n = length(initial_x)
     copyto!(state.x, initial_x)
-    retract!(method.manifold, initial_x)
+    retract!(M, initial_x)
     value_gradient!!(d, initial_x)
-    project_tangent!(method.manifold, gradient(d), initial_x)
+    project_tangent!(M, gradient(d), initial_x)
     copyto!(state.g_previous, gradient(d))
     method.initial_invH(state.invH, initial_x)
     state.alpha = one(T)#/2
@@ -89,42 +89,48 @@ function uninitialized_state(initial_x::RecursiveVector{T,P}) where {T,P}
 end
 function initial_convergence(d, state, method::AbstractOptimizer, initial_x, options)
     gradient!(d, initial_x)
-    maximum(gradient(d)) < options.g_tol
+    norm(gradient(d), Inf) < options.g_tol
 end
 
 function optimize_light(d::D, initial_x::Tx, method::M,
                   options::LightOptions = LightOptions(),
                   state = initial_state(method, options, d, initial_x)) where {D<:DifferentiableObject, M<:AbstractOptimizer, Tx <: AbstractArray}
+    # @show state
 
     f_limit_reached, g_limit_reached, h_limit_reached = false, false, false
     x_converged, f_converged, f_increased = false, false, false
 
     g_converged = initial_convergence(d, state, method, initial_x, options)
+    # @show g_converged
     converged = g_converged
 
     # prepare iteration counter (used to make "initial state" trace entry)
     iteration = 0
-
-    while !converged && iteration < 200#options.iterations #uncomment if you add back iterations field to LightOptions
+    # println("\n")
+    while !converged && iteration < 60#options.iterations #uncomment if you add back iterations field to LightOptions
         iteration += 1
+        # @show gradient(d)
         update_state!(d, state, method) && break # it returns true if it's forced by something in update! to stop (eg dx_dg == 0.0 in BFGS, or linesearch errors)
+        # @show state.x_previous, state.g_previous
         update_g!(d, state, method) # TODO: Should this be `update_fg!`?
         x_converged, f_converged,
         g_converged, converged, f_increased = assess_convergence(state, d, options)
         !converged && update_h!(d, state, method) # only relevant if not converged
-        debug() && @show state.f_x_previous, value(d)
+        # debug() && # @show state.f_x_previous, value(d)
+        # println("\n")
     end # while
-    debug() && @show iteration, x_converged, f_converged, g_converged, converged
+    # println("\n")
+    # @show iteration, x_converged, f_converged, g_converged, converged
     f_incr_pick = disallow_f_increases(options) && f_increased
     f_incr_pick ? ( state.x_previous, state.f_x_previous ) : ( state.x, value(d) )
 end
 disallow_f_increases(options) = false
 # disallow_f_increases(options::Options) = options.allow_f_increases
 
-function update_g!(d, state, method::M) where M <: FirstOrderOptimizer# Union{FirstOrderOptimizer, Newton}
+function update_g!(d, state, method::FirstOrderOptimizer{M}) where M# Union{FirstOrderOptimizer, Newton}
     # Update the function value and gradient
     value_gradient!(d, state.x)
     # if M <: FirstOrderOptimizer #only for methods that support manifold optimization
-    project_tangent!(method.manifold, gradient(d), state.x)
+    project_tangent!(M, gradient(d), state.x)
     # end
 end

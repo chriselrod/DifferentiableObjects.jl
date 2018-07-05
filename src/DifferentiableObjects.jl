@@ -7,7 +7,17 @@ using   ForwardDiff,
         Parameters,
         LinearAlgebra
 
-
+import  NLSolversBase: AbstractObjective,
+        value!!,
+        value!,
+        value,
+        gradient,
+        gradient!,
+        value_gradient!,
+        value_gradient!!,
+        hessian!,
+        hessian!!
+        
 export  OnceDifferentiable,
         TwiceDifferentiable,
         optimize_light,
@@ -16,12 +26,13 @@ export  OnceDifferentiable,
 
 
 
-abstract type DifferentiableObject{P} end
+abstract type DifferentiableObject{P} <: AbstractObjective end
 
-debug() = false
+debug() = true
 
 include("forward_diff_differentiable.jl")
 include("bfgs.jl")
 include("optimize.jl")
+include("miscellaneous.jl")
 
 end # module
