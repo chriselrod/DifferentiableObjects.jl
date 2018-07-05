@@ -1,3 +1,5 @@
+
+__precompile__()
 module DifferentiableObjects
 
 using   ForwardDiff,
@@ -18,11 +20,21 @@ import  NLSolversBase: AbstractObjective,
         hessian!,
         hessian!!
         
-export  OnceDifferentiable,
+export  DifferentiableObject,
+        GradientConfiguration,
+        HessianConfiguration,
+        OnceDifferentiable,
         TwiceDifferentiable,
         optimize_light,
         LightOptions,
-        BFGS
+        BFGS,
+        value,
+        value!,
+        gradient,
+        gradient!,
+        hessian,
+        hessian!,
+        value_gradient!
 
 
 

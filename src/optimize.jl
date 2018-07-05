@@ -57,7 +57,7 @@ function initial_state!(state, method::BFGS{M}, d, initial_x::AbstractArray{T}) 
     value_gradient!!(d, initial_x)
     project_tangent!(M, gradient(d), initial_x)
     copyto!(state.g_previous, gradient(d))
-    method.initial_invH(state.invH, initial_x)
+    method.initial_invH((state.invH, initial_x))
     state.alpha = one(T)#/2
     nothing
 end
