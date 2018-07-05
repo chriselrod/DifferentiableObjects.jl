@@ -58,7 +58,7 @@ function HessianConfiguration(f::F, x::RecursiveVector{T,P}) where {F,T,P}
 end
 TwiceDifferentiable(f::F, ::Val{N}) where {F,N} = TwiceDifferentiable(f, RecursiveVector{Float64,N}())
 function TwiceDifferentiable(f::F, x::RecursiveVector{T,N}) where {F,T,N}
-    TwiceDifferentiable(x, similar(x), similar(x), Configuration(f, x))
+    TwiceDifferentiable(x, similar(x), similar(x), HessianConfiguration(f, x))
 end
 function TwiceDifferentiable(x_f::RecursiveVector{T,P},x_df::RecursiveVector{T,P},
                             x_h::RecursiveVector{T,P},config::C) where {T,F,C<:Configuration{T,F},P}
