@@ -81,9 +81,10 @@ function uninitialized_state(initial_x::RecursiveVector{T,P}) where {T,P}
         similar(initial_x), # Store changes in position in state.dx
         similar(initial_x), # Store changes in gradient in state.dg
         similar(initial_x), # Buffer stored in state.u
-        RecursiveMatrix{T,P,P}(), # Store current invH in state.invH
+        SymmetricMatrix{T,P}(),
+        #RecursiveMatrix{T,P,P}(), # Store current invH in state.invH
         similar(initial_x), # Store current search direction in state.s
-        T(NaN),            # Keep track of previous descent value ⟨∇f(x_{k-1}), s_{k-1}⟩
+        # T(NaN),            # Keep track of previous descent value ⟨∇f(x_{k-1}), s_{k-1}⟩
         similar(initial_x), # Buffer of x for line search in state.x_ls
         one(T))
 end
