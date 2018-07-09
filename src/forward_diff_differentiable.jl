@@ -73,10 +73,10 @@ end
 function OnceDifferentiable(x_f::RecursiveVector{T,P}, config::C) where {T,F,C<:GradientConfiguration{T,F},P}
     OnceDifferentiable{P,T,F,C}(x_f, similar(x_f), config)
 end
-function OnceDifferentiable(x_f::RecursiveVector{T,P},x_df::RecursiveVector{T,P},
-                                config::C) where {T,P,F,C<:GradientConfiguration{P,T,F}}
-    OnceDifferentiable{P,T,F,C}(x_f, x_df, config)
-end
+# function OnceDifferentiable(x_f::RecursiveVector{T,P},x_df::RecursiveVector{T,P},
+#                                 config::C) where {T,P,F,C<:GradientConfiguration{P,T,F}}
+#     OnceDifferentiable{P,T,F,C}(x_f, x_df, config)
+# end
 
 # ProfileDifferentiable(f::F, ::Val{N}) where {F,N} = ProfileDifferentiable(f, Vector{Float64}(undef, N), Val{N}())
 # function ProfileDifferentiable(f::F, x::AbstractArray{T}, ::Val{N}) where {F,T,N}
