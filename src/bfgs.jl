@@ -2,9 +2,9 @@
 # Optim.jl is licensed under the MIT License:
 
 # > Copyright (c) 2012: John Myles White, Tim Holy, and other contributors.
-# > Copyright (c) 2016: Patrick Kofod Mogensen, John Myles White, Tim Holy, 
-# >                     and other contributors. 
-# > Copyright (c) 2017: Patrick Kofod Mogensen, Asbjørn Nilsen Riseth, 
+# > Copyright (c) 2016: Patrick Kofod Mogensen, John Myles White, Tim Holy,
+# >                     and other contributors.
+# > Copyright (c) 2017: Patrick Kofod Mogensen, Asbjørn Nilsen Riseth,
 # >                     John Myles White, Tim Holy, and other contributors.
 # >
 # > Permission is hereby granted, free of charge, to any person
@@ -46,15 +46,15 @@ end
 
 """Flat Euclidean space {R,C}^N, with projections equal to the identity."""
 struct Flat <: Manifold end
-ManifoldObjective(::Type{Flat}, inner_obj) = inner_obj
-@inline retract(::Type{Flat}, x) = x
-@inline retract!(::Type{Flat},x) = x
-@inline project_tangent(::Type{Flat}, g, x) = g
-@inline project_tangent!(::Type{Flat}, g, x) = g
+ManifoldObjective(::Flat, inner_obj::DifferentiableObject) = inner_obj
+@inline retract(::Flat, x) = x
+@inline retract!(::Flat,x) = x
+@inline project_tangent(::Flat, g, x) = g
+@inline project_tangent!(::Flat, g, x) = g
 """Spherical manifold {|x| = 1}."""
 struct Sphere <: Manifold end
-@inline retract!(::Type{Sphere}, x) = normalize!(x)
-@inline project_tangent!(::Type{Sphere}, g, x) = (g .-= real(dot(x,g)).*x)
+@inline retract!(::Sphere, x) = normalize!(x)
+@inline project_tangent!(::Sphere, g, x) = (g .-= real(dot(x,g)).*x)
 # @inline gradient(m::ManifoldObjective) = gradient(m.inner_obj)
 function value!(obj::ManifoldObjective{M}, x) where M
     xin = retract(M, x)
@@ -91,67 +91,101 @@ struct BFGS{M, IL, L, H<:Function} <: FirstOrderOptimizer{M}
     alphaguess!::IL# = LineSearches.InitialStatic()
     linesearch!::L# = LineSearches.HagerZhang()
     initial_invH::H# = initial_diaginvH
+    manifold::M
 end
 function BFGS(;
-        alphaguess::IL = LineSearches.InitialStatic(),
-        linesearch::L = LineSearches.HagerZhang(),
+        alphaguess::IL = InitialStatic(),
+        linesearch::L = BackTracking(),
         initial_invH::H = initial_diaginvH,
         manifold::M = Flat()
     ) where {IL, L, H, M <: Manifold}
-    BFGS{M, IL, L, H}(alphaguess, linesearch, initial_invH)
+    BFGS{M, IL, L, H}(alphaguess, linesearch, initial_invH, manifold)
 end
 
 # Base.summary(::BFGS) = "BFGS"
 
-function initial_diaginvH(::RecursiveVector{T,P}, α::T = one(T)) where {T,P}
-    H = SymmetricMatrix{T,P}()
-    ind = 0
+@generated function initial_diaginvH(v::MVector{P,T}, α::T = one(T)) where {T,P}
+    quote
+        H = Symmetric(MMatrix{$P,$P,$T}(undef))
+        ind = 0
+        @inbounds for i = 1:$P
+            for j ∈ 1:i-1
+                H.data[ind] = zero($T)
+            end
+            H.data[ind] = α
+            for j ∈ i+1:$P
+                H.data[ind] = zero($T)
+            end
+        end
+        H
+    end
+end
+@generated function initial_diaginvH(v::SizedSIMDVector{P,T}, α::T = one(T)) where {T,P}
+    quote
+        H = Symmetric(SizedSIMDArray(undef, Val(($P,$P)), $T))
+        ind = 0
+        @inbounds for i = 1:$P
+            for j ∈ 1:i-1
+                H.data[j,i] = zero($T)
+            end
+            H.data[i,i] = α
+            for j ∈ i+1:$P
+                H.data[j,i] = zero($T)
+            end
+        end
+        H
+    end
+end
+@inline function initial_diaginvH(H::SymmetricMatrix{P,T},V::SizedVector{P,T}, α = one(T)) where {T,P}
+    # println("Resseting H.")
+    # @show H
     @inbounds for i = 1:P
         for j ∈ 1:i-1
-            ind += 1
-            H[ind] = zero(T)
+            H.data[j,i] = zero(T)
         end
-        ind += 1
-        H[ind] = α
+        H.data[i,i] = α
+        for j ∈ i+1:P
+            H.data[j,i] = zero(T)
+        end
     end
     H
 end
-function initial_diaginvH((H,V)::Tuple{SymmetricMatrix{T,P,L},RecursiveVector{T,P}}, α = one(T)) where {T,P,L}
+@inline function initial_diaginvH(H::SymmetricMatrix{P,T}, α = one(T)) where {T,P}
     # println("Resseting H.")
     # @show H
-    ind = 0
     @inbounds for i = 1:P
         for j ∈ 1:i-1
-            ind += 1
-            H[ind] = zero(T)
+            H.data[j,i] = zero(T)
         end
-        ind += 1
-        H[ind] = α
+        H.data[i,i] = α
+        for j ∈ i+1:P
+            H.data[j,i] = zero(T)
+        end
     end
     H
 end
 
-mutable struct BFGSState{P,T,L} <: AbstractOptimizerState
-    x::RecursiveVector{T,P}
-    x_previous::RecursiveVector{T,P}
-    g_previous::RecursiveVector{T,P}
+mutable struct BFGSState{P,T,L,SV<:SizedSIMDVector{P,T,L},SM<:SymmetricMatrix{P,T}} <: AbstractOptimizerState
+    x::SV
+    x_previous::SV
+    g_previous::SV
     f_x_previous::T
-    dx::RecursiveVector{T,P}
-    dg::RecursiveVector{T,P}
-    u::RecursiveVector{T,P}
-    invH::SymmetricMatrix{T,P,L}
-    s::RecursiveVector{T,P}
-    x_ls::RecursiveVector{T,P}
+    dx::SV
+    dg::SV
+    u::SV
+    invH::SM
+    s::SV
+    x_ls::SV
     alpha::T
 end
 
-function initial_state(method::BFGS{M}, options, d, initial_x::RecursiveVector{T,P}) where {M,T,P}
+function initial_state(method::BFGS{M}, options, d, initial_x::SizedVector{P,T}) where {M,T,P}
     initial_x = copy(initial_x)
-    retract!(M, initial_x)
+    retract!(method.manifold, initial_x)
 
     value_gradient!!(d, initial_x)
 
-    project_tangent!(M, gradient(d), initial_x)
+    project_tangent!(method.manifold, gradient(d), initial_x)
     # Maintain a cache for line search results
     # Trace the history of states visited
     BFGSState(
@@ -172,19 +206,22 @@ end
 
 
 function reset_search_direction!(state, d, method::BFGS)
-    method.initial_invH((state.invH, state.x))
-    state.s .= .-gradient(d)
+    method.initial_invH(state.invH, state.x)
+    grad = gradient(d)
+    @inbounds for i ∈ eachindex(state.s, grad)
+        state.s[i] = - grad[i]
+    end
     return true
 end
-function update_state!(d, state::BFGSState, method::BFGS{M, IL, L, H}) where {IL,L,H,M<:Manifold}
+function update_state!(d, state, method)
 
     # @show state.s, state.invH, vec(gradient(d))
     # Set the search direction
     # Search direction is the negative gradient divided by the approximate Hessian
-    mul!(vec(state.s), state.invH, vec(gradient(d)))
-    scale!(state.s, -1)
+    mul!(vec(state.s), state.invH.data, vec(gradient(d)))
+    SIMDArrays.scale!(state.s, -one(eltype(state.s)))
     # # @show state.s
-    project_tangent!(M, state.s, state.x)
+    project_tangent!(method.manifold, state.s, state.x)
     # @show state.s, state.x
 
     # Maintain a record of the previous gradient
@@ -193,16 +230,20 @@ function update_state!(d, state::BFGSState, method::BFGS{M, IL, L, H}) where {IL
     # Determine the distance of movement along the search line
     # This call resets invH to initial_invH is the former in not positive
     # semi-definite
-    lssuccess = perform_linesearch!(state, method, ManifoldObjective(M, d))
+    # lssuccess = perform_linesearch!(state, method, ManifoldObjective(M, d))
+    perform_linesearch!(state, method, ManifoldObjective(method.manifold, d)) # 120 ns
     # @show state.alpha, state.s
 
     # Update current position
-    state.dx .= state.alpha.*state.s
-    state.x .= state.x .+ state.dx
-    retract!(M, state.x)
+    @inbounds @simd for i ∈ 1:full_length(state.dx)
+        state.dx[i] = state.alpha * state.s[i]
+        state.x[i] = state.x[i] + state.dx[i]
+    end
+    retract!(method.manifold, state.x)
     # @show state.x
 
-    lssuccess == false # break on linesearch error
+    # lssuccess == false # break on linesearch error
+    false
 end
 function perform_linesearch!(state, method, d)
     # Calculate search direction dphi0
@@ -225,68 +266,72 @@ function perform_linesearch!(state, method, d)
     copyto!(state.x_previous, state.x)
 
     # Perform line search; catch LineSearchException to allow graceful exit
-    try
-        state.alpha, ϕalpha =
-            method.linesearch!(d, state.x, state.s, state.alpha,
-                               state.x_ls, phi_0, dphi_0)
-        return true # lssuccess = true
-    catch ex
-        if isa(ex, LineSearches.LineSearchException)
-            state.alpha = ex.alpha
-            Base.warn("Linesearch failed, using alpha = $(state.alpha) and exiting optimization.\nThe linesearch exited with message:\n$(ex.message)")
-            return false # lssuccess = false
-        else
-            rethrow(ex)
-        end
-    end
+    # try
+        # state.alpha, ϕalpha =
+    linesearch!(method.linesearch!, d, state.x, state.s, state.alpha, state.x_ls, phi_0, dphi_0)
+    return true # lssuccess = true
+    # catch ex
+    #     if isa(ex, LineSearches.LineSearchException)
+    #         state.alpha = ex.alpha
+    #         Base.warn("Linesearch failed, using alpha = $(state.alpha) and exiting optimization.\nThe linesearch exited with message:\n$(ex.message)")
+    #         return false # lssuccess = false
+    #     else
+    #         rethrow(ex)
+    #     end
+    # end
 end
+#
+# function create_quote()
+#     q = quote @fastmath @inbounds begin end end
+#     @static if VERSION > v"0.7-"
+#         qa = q.args[2].args[3].args[3].args
+#     else
+#         qa = q.args[2].args[2].args[2].args
+#     end
+#     q, qa
+# end
 
 
-@generated function update_h!(d, state::BFGSState{P,T}, method) where {P,T}
-    q, qa = TriangularMatrices.create_quote()
-    #
-    ind = 0
-    if P > 10
-        for i ∈ 1:P, j ∈ 1:i
-            ind += 1
-            push!(qa, :( state.invH[$ind] += c1 * state.dx[i] * state.dx[j]' - c2 * (state.u[i] * state.dx[j]' + state.u[j]' * state.dx[i]) ) ) 
-        end
-    else
-        TriangularMatrices.extract_linear!(qa, P, :dx, :(state.dx))
-        TriangularMatrices.extract_linear!(qa, P, :u, :(state.u))
-        for i ∈ 1:P
-            dxi = Symbol(:dx_, i )
-            ui = Symbol(:u_, i )
-            for j ∈ 1:i
-                dxj = Symbol(:dx_, j )
-                ind += 1
-                push!(qa, :( state.invH[$ind] += c1 * $dxi * $dxj' - c2 * ($ui * $dxj' + $(Symbol(:u_, j ))' * $dxi) ) ) 
-            end
-        end
+function update_h!(d, state::BFGSState{P,T,L}, method) where {P,T,L}
+    # Measure the change in the gradient
+    ∇ = gradient(d)
+    @inbounds @simd for i ∈ 1:L
+        state.dg[i] =  ∇[i] - state.g_previous[i]
     end
 
-    quote
-        # Measure the change in the gradient
-        state.dg .= gradient(d) .- state.g_previous
+    # @show gradient(d), state.g_previous, state.dg
+    # Update the inverse Hessian approximation using Sherman-Morrison
+    dx_dg = real(dot(state.dx, state.dg))
+    dx_dg == 0.0 && return true # force stop
+    # @show dx_dg, state.invH
+    # @show state.u
+    # I may not support the use of `vec` here.
+    mul!(vec(state.u), state.invH.data, vec(state.dg))
 
-        # @show gradient(d), state.g_previous, state.dg
-        # Update the inverse Hessian approximation using Sherman-Morrison
-        dx_dg = real(dot(state.dx, state.dg))
-        if dx_dg == 0.0
-            return true # force stop
-        end
-        # @show dx_dg, state.invH
-        # @show state.u
-        mul!(vec(state.u), state.invH, vec(state.dg))
 
-        c1 = (dx_dg + real(dot(state.dg, state.u))) / (dx_dg' * dx_dg)
-        c2 = 1 / dx_dg
-        # @show dx_dg, c1, c2
-        # @show state.dx
-        # @show state.u
-        $q
-        # @show state.invH
-    end
+    c2 = 1 / dx_dg
+    c1 = fma(real(dot(state.dg, state.u)), c2*c2, c2)
+
+    # c1v2 = ( dx_dg + real(dot(state.dg, state.u))) / (dx_dg' * dx_dg)
+    # c2v2 = 1 / dx_dg
+    # @show state.u
+    # @show state.dx
+    # @show state.dg
+
+    # hx = copy(state.invH)
+    # @inbounds for i ∈ 1:P
+    #     sdxi = state.dx[i]
+    #     sui = state.u[i]
+    #     @simd for j ∈ 1:L
+    #         hx[j,i] += c1 * sdxi * state.dx[j] - c2 * (sui * state.dx[j] + state.u[j] * sdxi)
+    #     end
+    # end
+    # @show hx
+
+    # @show state.x, state.invH
+    SIMDArrays.BFGS_update!(state.invH, state.dx, state.u, c1, c2)
+    # @show state.x, state.invH
+    false
 end
 
 function maxdiff(x::AbstractArray{T1}, y::AbstractArray{T2}) where {T1,T2}
@@ -304,7 +349,8 @@ f_abschange(f_x::T, f_x_previous) where T = abs(f_x - f_x_previous)
 x_abschange(state) = x_abschange(state.x, state.x_previous)
 x_abschange(x, x_previous) = maxdiff(x, x_previous)
 g_residual(d::DifferentiableObject) = g_residual(gradient(d))
-g_residual(g) = norm(g, Inf)
+# g_residual(g) = norm(g, Inf)
+@inline g_residual(g) = SIMDArrays.maximum_abs(g)
 function gradient_convergence_assessment(state::AbstractOptimizerState, d, options)
     g_residual(gradient(d)) ≤ options.g_tol
 end
@@ -337,5 +383,3 @@ function default_convergence_assessment(state::AbstractOptimizerState, d, option
 
     return x_converged, f_converged, g_converged, converged, f_increased
 end
-
-

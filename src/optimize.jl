@@ -2,9 +2,9 @@
 # jl is licensed under the MIT License:
 
 # > Copyright (c) 2012: John Myles White, Tim Holy, and other contributors.
-# > Copyright (c) 2016: Patrick Kofod Mogensen, John Myles White, Tim Holy, 
-# >                     and other contributors. 
-# > Copyright (c) 2017: Patrick Kofod Mogensen, Asbjørn Nilsen Riseth, 
+# > Copyright (c) 2016: Patrick Kofod Mogensen, John Myles White, Tim Holy,
+# >                     and other contributors.
+# > Copyright (c) 2017: Patrick Kofod Mogensen, Asbjørn Nilsen Riseth,
 # >                     John Myles White, Tim Holy, and other contributors.
 # >
 # > Permission is hereby granted, free of charge, to any person
@@ -73,7 +73,7 @@ end
 #     nothing
 # end
 
-function uninitialized_state(initial_x::RecursiveVector{T,P}) where {T,P}
+function uninitialized_state(initial_x::SizedVector{P,T}) where {T,P}
     BFGSState(similar(initial_x), # Maintain current state in state.x
         similar(initial_x), # Maintain previous state in state.x_previous
         similar(initial_x), # Store previous gradient in state.g_previous
@@ -90,10 +90,11 @@ function uninitialized_state(initial_x::RecursiveVector{T,P}) where {T,P}
 end
 function initial_convergence(d, state, method::AbstractOptimizer, initial_x, options)
     gradient!(d, initial_x)
-    norm(gradient(d), Inf) < options.g_tol
+    # norm(gradient(d), Inf) < options.g_tol
+    SIMDArrays.maximum_abs(gradient(d)) < options.g_tol
 end
 
-function optimize_light(d::D, initial_x::Tx, method::M,
+function optimize_heavy(d::D, initial_x::Tx, method::M,
                   options::LightOptions = LightOptions(),
                   state = initial_state(method, options, d, initial_x)) where {D<:DifferentiableObject, M<:AbstractOptimizer, Tx <: AbstractArray}
     # @show state
@@ -132,6 +133,6 @@ function update_g!(d, state, method::FirstOrderOptimizer{M}) where M# Union{Firs
     # Update the function value and gradient
     value_gradient!(d, state.x)
     # if M <: FirstOrderOptimizer #only for methods that support manifold optimization
-    project_tangent!(M, gradient(d), state.x)
+    project_tangent!(method.manifold, gradient(d), state.x)
     # end
 end
