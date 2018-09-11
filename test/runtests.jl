@@ -1,19 +1,41 @@
-using Test
+# using Test
 
-using SIMDArrays, DifferentiableObjects
-
-
-@inline rosenbrock(x) =  (@inbounds out = (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2; out)
+using SIMDArrays, DifferentiableObjects, StaticArrays
 
 
-state = DifferentiableObjects.BFGSState2(Val(2));
-initial_x = zero(SizedSIMDVector{2,Float64});
-ls = DifferentiableObjects.BackTracking2();
+# @inline rosenbrock(x) =  (@inbounds out = (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2; out)
+
+function rosenbrock(x::Union{<:SVector{P,T},SizedSIMDVector{P,T}}) where {P,T}
+    out = zero(T)
+    @inbounds for i ∈ 2:2:P
+        out += 100abs2(abs2(x[i-1]) - x[i]) + abs2(x[i-1] - 1)
+    end
+    out
+end
+
+const P = 6
+
+state = DifferentiableObjects.BFGSState2(Val(P));
+initial_x = fill(SizedSIMDVector{P,Float64}, 3.2);
+ls2 = DifferentiableObjects.BackTracking2(Val(2));
+ls3 = DifferentiableObjects.BackTracking2(Val(3));
 obj = OnceDifferentiable(rosenbrock, initial_x);
-DifferentiableObjects.optimize_light!(state, obj, initial_x, ls)
+DifferentiableObjects.optimize_light!(state, obj, initial_x, ls2), state.x_old
+DifferentiableObjects.optimize_light!(state, obj, initial_x, ls3), state.x_old
 
 using BenchmarkTools
-@benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls)
+@benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls2)
+@benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls3)
+
+using StaticArrays, StaticOptim
+
+sx = @SVector fill(3.2, P);
+soptimize(rosenbrock, sx)
+@benchmark soptimize(rosenbrock, $sx)
+@benchmark soptimize(rosenbrock, $sx, StaticOptim.Order3())
+
+
+
 
 
 initial_x = zero(SizedSIMDVector{2,Float64});
@@ -65,6 +87,6 @@ Profile.print()
 
 using StaticArrays, StaticOptim
 
-sx = @SVector zeros(2)
-rosenbrock(x) =  (@inbounds out = (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2; out)
+sx = @SVector zeros(P)
 soptimize(rosenbrock, sx)
+@benchmark soptimize(rosenbrock, $sx)

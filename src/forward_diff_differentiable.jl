@@ -1,6 +1,16 @@
 
-# Could these be Base.@pure ?
-@generated Chunk(::Val{N}) where N = ForwardDiff.Chunk(N)
+
+
+# This needs actual performance testing.
+@generated function Chunk(::Val{N}) where N
+    if 4N <= jBLAS.REGISTER_SIZE
+        P = N
+    else
+        p1 = round(Int, 4N / jBLAS.REGISTER_SIZE, RoundUp)
+        P = round(Int, N / p1, RoundUp)
+    end
+    ForwardDiff.Chunk{P}()
+end
 @generated ValP1(::Val{N}) where N = Val{N+1}()
 @generated ValM1(::Val{N}) where N = Val{N-1}()
 
@@ -56,10 +66,10 @@ function GradientDiffResult(x::SizedVector{P,T}) where {T,P}
     GradientDiffResult(zero(T), similar(x))
 end
 function HessianDiffResult(x::SizedSIMDVector{P,T}) where {T,P}
-    HessianDiffResult(zero(T), similar(x), Symmetric(SizedSIMDMatrix{P,P,T}(undef)))
+    HessianDiffResult(zero(T), similar(x), SizedSIMDMatrix{P,P,T}(undef))
 end
 function HessianDiffResult(x::MVector{P,T}) where {T,P}
-    HessianDiffResult(zero(T), similar(x), Symmetric(MMatrix{P,P,T}(undef)))
+    HessianDiffResult(zero(T), similar(x), MMatrix{P,P,T}(undef))
 end
 
 abstract type AutoDiffDifferentiable{P,T,F} <: DifferentiableObject{P} end
@@ -71,15 +81,21 @@ struct GradientConfiguration{P,V,F,T,ND,DG,SV_V <: SizedVector{P,V}} <: Configur
     gconfig::ForwardDiff.GradientConfig{T,V,ND,DG}
 end
 
-struct HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2,P2, SV_V <: SizedVector{P,V}, SQM <: SizedSquareMatrix{P,V},
+struct HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2, SV_V <: SizedVector{P,V}, SQM <: SizedSquareMatrix{P,V},
                                         SV_D <: SizedVector{P,ForwardDiff.Dual{T,V,ND}} } <: Configuration{P,V,F}
     f::F
-    result::HessianDiffResult{V,SV_V,Symmetric{V,SQM}}
+    result::HessianDiffResult{V,SV_V,SQM}
     inner_result::GradientDiffResult{ForwardDiff.Dual{T,V,ND},SV_D}
     jacobian_config::ForwardDiff.JacobianConfig{T,V,ND,DJ}
     gradient_config::ForwardDiff.GradientConfig{T,ForwardDiff.Dual{T,V,ND},ND,DG}
     gconfig::ForwardDiff.GradientConfig{T2,V,ND,DG2}
 end
+# function HessianConfiguration(f::F, result::HessianDiffResult{V,SV_V,SQM}, inner_result::GradientDiffResult{ForwardDiff.Dual{T,V,ND},SV_D}, jacobian_config::ForwardDiff.JacobianConfig{T,V,ND,DJ}, gradient_config::ForwardDiff.GradientConfig{T,ForwardDiff.Dual{T,V,ND},ND,DG}, gconfig::ForwardDiff.GradientConfig{T2,V,ND,DG2}) where {P,V,F,T,T2,ND,DJ,DG,DG2, SV_V <: SizedVector{P,V}, SQM <: SizedSquareMatrix{P,V},
+#                                         SV_D <: SizedVector{P,ForwardDiff.Dual{T,V,ND}} }
+#     HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2, SV_V, SQM, SV_D}(
+#         f, result, inner_result, jacobian_config, gradient_config, gconfig
+#     )
+# end
 struct TwiceDifferentiable{P,T,F,C<:Configuration{P,T,F}, SV_V <: SizedVector{P,T}} <: AutoDiffDifferentiable{P,T,F}
     x_f::SV_V # x used to evaluate f (stored in F)
     x_df::SV_V # x used to evaluate df (stored in DF)
@@ -113,6 +129,7 @@ function HessianConfiguration(f::F, x::SizedVector{P,T}) where {F,T,P}
 
     HessianConfiguration(f, result, inner_result, jacobian_config, gradient_config, gconfig)
 end
+
 TwiceDifferentiable(f::F, ::Val{P}) where {F,P} = TwiceDifferentiable(f, SizedSIMDVector{P,Float64}(undef))
 function TwiceDifferentiable(f::F, x::SV_V) where {F,T,P,SV_V <: SizedVector{P,T}}
     TwiceDifferentiable(x, similar(x), similar(x), HessianConfiguration(f, x))
@@ -191,7 +208,7 @@ end
 # end
 
 @inline function (c::HessianConfiguration)(y, z)
-    c.inner_result.derivs = (y,) #Already true?
+    c.inner_result.grad = y #Already true?
     ForwardDiff.gradient!(c.inner_result, c.f, z, c.gradient_config, Val{false}())
     DiffResults.value!(c.result, ForwardDiff.value(DiffResults.value(c.inner_result)))
     y
@@ -315,6 +332,14 @@ end
 # end
 
 @inline function ForwardDiff.seed!(duals::SizedSIMDVector{P,ForwardDiff.Dual{T,V,N}}, x,
+                                    seed::ForwardDiff.Partials{N,V}) where {T,V,N,P}
+    @inbounds for i in 1:N
+        duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seed)
+    end
+    return duals
+end
+
+@inline function ForwardDiff.seed!(duals::SizedSIMDVector{P,ForwardDiff.Dual{T,V,N}}, x,
                                     seeds::NTuple{N,ForwardDiff.Partials{N,V}}) where {T,V,N,P}
     @inbounds for i in 1:N
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
@@ -328,6 +353,16 @@ end
     @inbounds for i in 1:N
         j = i + offset
         duals[j] = ForwardDiff.Dual{T,V,N}(x[j], seed)
+    end
+    return duals
+end
+
+@inline function ForwardDiff.seed!(duals::SizedSIMDVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
+                                    seeds::NTuple{N,ForwardDiff.Partials{N,V}}, chunksize = N) where {T,V,N,P}
+    offset = index - 1
+    @inbounds for i in 1:chunksize
+        j = i + offset
+        duals[j] = ForwardDiff.Dual{T,V,N}(x[j], seeds[i])
     end
     return duals
 end
