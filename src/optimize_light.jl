@@ -307,3 +307,192 @@ end
     push!(q.args, :(nothing))
     q
 end
+
+"""
+Similar to optimize_light!, but it scales the function so that
+norm(gradient(f, initial_x)) ≈ 10
+"""
+function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking2{order}, scale_target=T(10), tol = 1e-8) where {P,T,L,order}
+    # res = DiffResults.GradientResult(x)
+    # ls = BackTracking()
+    # order = ordernum(bto)
+    # copyto!(state.xinit, x)
+    # copyto!(state.x_new, x)
+    # xinit = copy(x)
+    # x_new = copy(x)
+    x_old = state.x_old
+    ∇_old = state.∇_old
+    invH = state.invH
+    δ∇ = state.δ∇
+    s = state.s
+    u = state.u
+    x_new = state.x_new
+    copyto!(x_old, x)
+    initial_invH!(state)
+    # hx = SMatrix{P,P,T}(I)
+    # if !(hguess isa Nothing)
+    #     hx = hguess * hx
+    # end
+    # hold = copy(hx)
+    # jold = copy(x); s = copy(x)
+    # @unpack c_1, ρ_hi, ρ_lo, iterations = ls
+    c_1, ρ_hi, ρ_lo, iterations = ls.c_1, ls.ρ_hi, ls.ρ_lo, ls.iterations
+    iterfinitemax = round(Int,-log2(eps(eltype(x))))
+    sqrttol = sqrt(eps(Float64))
+    α_0 = one(T)
+    N = 200
+    f_calls = 0
+    g_calls = 0
+    local scale::T
+    for n = 1:N
+        # res = ForwardDiff.gradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+        # ∇ = gradient!(d, x_old)
+        # # ϕ_0 = DiffResults.value(res)
+        # ϕ_0 = value(d)
+
+        if n == 1 # calculate scale
+            ϕ_0, scale = scale_fdf(obj, x_old, scale_target); f_calls +=1; g_calls +=1;
+            ∇ = gradient(obj)
+
+            isfinite(ϕ_0) || return T(NaN), scale
+            SIMDArrays.maximum_abs(∇) < tol && return ϕ_0, scale
+        else # update hessian
+
+            ϕ_0 = scaled_fdf(obj, x_old, scale); f_calls +=1; g_calls +=1;
+            ∇ = gradient(obj)
+
+            isfinite(ϕ_0) || return T(NaN), scale
+            SIMDArrays.maximum_abs(∇) < tol && return ϕ_0, scale
+            # y = jx - jold
+            # hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+
+
+            # invH = invH + c1 * (s * s') - c2 * (u * s' + s * u')
+            # @show L
+            # @show length(δ∇), length(∇), length(∇_old)
+            # @show full_length(δ∇), full_length(∇), full_length(∇_old)
+            # @show typeof(δ∇), typeof(∇), typeof(∇_old)
+            # @inbounds @simd for i ∈ 1:L
+            #     δ∇[i] =  ∇[i] - ∇_old[i]
+            # end
+            SIMDArrays.vsub!(δ∇, ∇, ∇_old)
+            # Update the inverse Hessian approximation using Sherman-Morrison
+            dx_dg = real(dot(s, δ∇))
+            # dx_dg == 0.0 && return true # force stop
+            mul!(u, invH, δ∇)
+            c2 = one(T) / dx_dg
+            c1 = fma(real(dot(δ∇, u)), c2*c2, c2)
+            SIMDArrays.BFGS_update!(invH, s, u, c1, c2)
+        end
+        mul!(s, invH, ∇)
+        # SIMDArrays.scale!(s, -one(eltype(s)))
+        SIMDArrays.reflect!(s)
+        # s = -hx\jx # Obtain direction
+        dϕ_0 = dot(∇, s)
+
+        if dϕ_0 >= zero(T) # If bad, reset search direction
+            initial_invH!(state)
+            # hx = hold
+            # s = -jx
+            # @show L, s, ∇
+            # @show length(s)
+            # @show length(∇)
+            # @inbounds @simd for i ∈ 1:L
+            #     s[i] = -∇[i]
+            # end
+            SIMDArrays.reflect!(s, ∇)
+            dϕ_0 = dot(∇, s)
+        end
+        #### Perform line search
+
+        # Count the total number of iterations
+        iteration = 0
+        ϕx_0, ϕx_1 = ϕ_0, ϕ_0
+        α_1, α_2 = α_0, α_0
+        # @inbounds @simd for i ∈ 1:L
+        #     x_new[i] = x_old[i] + α_1*s[i]
+        # end
+        SIMDArrays.vadd!(x_new, x_old, α_1, s)
+        # ϕx_1 = f(x + α_1*s); f_calls += 1;
+        ϕx_1 = f(obj, state.x_new) * scale; f_calls += 1;
+
+        # Hard-coded backtrack until we find a finite function value
+        iterfinite = 0
+        # while (isinf(ϕx_1) || isnan(ϕx_1)) && iterfinite < iterfinitemax
+        while isinf(ϕx_1) && iterfinite < iterfinitemax
+            iterfinite += 1
+            α_1 = α_2
+            α_2 = T(0.5)*α_1
+            # @inbounds @simd for i ∈ 1:L
+            #     x_new[i] = x_old[i] + α_2*s[i]
+            # end
+            SIMDArrays.vadd!(x_new, x_old, α_2, s)
+            # ϕx_1 = f(x + α_2*s); f_calls += 1;
+            ϕx_1 = f(obj, state.x_new) * scale; f_calls += 1;
+        end
+
+        # Backtrack until we satisfy sufficient decrease condition
+        while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
+            # Increment the number of steps we've had to perform
+            iteration += 1
+
+            # Ensure termination
+            if iteration > iterations
+                error("Linesearch failed to converge, reached maximum iterations $(iterations).",
+                α_2)
+            end
+
+            # Shrink proposed step-size:
+            @fastmath if order == 2 || iteration == 1
+                # backtracking via quadratic interpolation:
+                # This interpolates the available data
+                #    f(0), f'(0), f(α)
+                # with a quadractic which is then minimised; this comes with a
+                # guaranteed backtracking factor 0.5 * (1-c_1)^{-1} which is < 1
+                # provided that c_1 < 1/2; the backtrack_condition at the beginning
+                # of the function guarantees at least a backtracking factor ρ.
+                α_tmp = - (dϕ_0 * α_2*α_2) / ( T(2) * (ϕx_1 - ϕ_0 - dϕ_0*α_2) )
+            else
+                div = one(T) / (α_1*α_1 * α_2*α_2 * (α_2 - α_1))
+                a = (α_1*α_1*(ϕx_1 - ϕ_0 - dϕ_0*α_2) - α_2*α_2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
+                b = (-α_1*α_1*α_1*(ϕx_1 - ϕ_0 - dϕ_0*α_2) + α_2*α_2*α_2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
+
+                if norm(a) <= eps(Float64) + sqrttol*norm(a)
+                    α_tmp = dϕ_0 / (T(2)*b)
+                else
+                    # discriminant
+                    d = max(b*b - T(3)*a*dϕ_0, zero(T))
+                    # quadratic equation root
+                    α_tmp = (sqrt(d) - b) / (T(3)*a)
+                end
+            end
+            α_1 = α_2
+
+            α_tmp = NaNMath.min(α_tmp, α_2*ρ_hi) # avoid too small reductions
+            α_2 = NaNMath.max(α_tmp, α_2*ρ_lo) # avoid too big reductions
+            # α_tmp = min(α_tmp, α_2*ρ_hi) # avoid too small reductions
+            # α_2 = max(α_tmp, α_2*ρ_lo) # avoid too big reductions
+
+            # Evaluate f(x) at proposed position
+            # ϕx_0, ϕx_1 = ϕx_1, f(x + α_2*s); f_calls += 1;
+            # @fastmath @inbounds @simd for i ∈ 1:L
+            #     x_new[i] = x_old[i] + α_2*s[i]
+            # end
+            SIMDArrays.vadd!(x_new, x_old, α_2, s)
+            ϕx_0, ϕx_1 = ϕx_1, f(obj, state.x_new) * scale; f_calls += 1;
+        end
+        alpha, fpropose = α_2, ϕx_1
+
+        # s = alpha*s
+        # x = x + s # Update x
+        # @inbounds @simd for i ∈ 1:L
+        #     s[i] *= alpha
+        #     x_old[i] += s[i]
+        # end
+        update_state!(s, x_old, alpha)
+        # jold = copy(jx)
+        copyto!(∇_old, ∇)
+    end
+    # return StaticOptimizationResults(NaN, N, tol, f_calls, g_calls, false), x_old
+    NaN, scale
+end

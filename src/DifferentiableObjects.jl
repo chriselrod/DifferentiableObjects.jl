@@ -32,6 +32,7 @@ export  DifferentiableObject,
         OnceDifferentiable,
         TwiceDifferentiable,
         optimize_light!,
+        optimize_scale!,
         LightOptions,
         BFGS,
         value,
@@ -55,6 +56,7 @@ include("initial_linesearch_guess.jl")
 include("backtracking.jl")
 
 include("forward_diff_differentiable.jl")
+include("scaled_gradients.jl")
 include("bfgs.jl")
 include("optimize.jl")
 include("optimize_light.jl")

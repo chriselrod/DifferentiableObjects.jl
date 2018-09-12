@@ -15,16 +15,16 @@ end
 @generated ValM1(::Val{N}) where N = Val{N-1}()
 
 
-mutable struct GradientDiffResult{V,G} <: DiffResults.DiffResult{1,V,Tuple{G}}
+mutable struct GradientDiffResult{V,P,G<:SizedSIMDVector{P,V}} <: DiffResults.DiffResult{1,V,Tuple{G}}
     value::V
     grad::G
 end
-mutable struct HessianDiffResult{V,G,H} <: DiffResults.DiffResult{2,V,Tuple{G,H}}
+mutable struct HessianDiffResult{V,P,G<:SizedSIMDVector{P,V},H<:SizedSIMDMatrix{P,P,V}} <: DiffResults.DiffResult{2,V,Tuple{G,H}}
     value::V
     grad::G
     hess::H
 end
-const GradResult{V,G} = Union{GradientDiffResult{V,G},HessianDiffResult{V,G}}
+const GradResult{V,P,G} = Union{GradientDiffResult{V,P,G},HessianDiffResult{V,P,G}}
 @inline DiffResults.derivative(result::GradResult) = result.grad
 @inline DiffResults.derivative(result::GradResult, ::Type{Val{1}}) = result.grad
 @inline DiffResults.derivative(result::HessianDiffResult, ::Type{Val{2}}) = result.hess
@@ -36,10 +36,10 @@ const GradResult{V,G} = Union{GradientDiffResult{V,G},HessianDiffResult{V,G}}
 @inline DiffResults.value!(f, r::GradResult, x::Number) = (r.value = f(x); return r)
 # @inline DiffResults.value!(f, r::GradResult, x::AbstractArray) = (map!(f, value(r), x); return r)
 
-function DiffResults.derivative!(r::GradResult, x::Number)
-    r.derivs = tuple_setindex(r.derivs, x, Val{i})
-    return r
-end
+# function DiffResults.derivative!(r::GradResult, x::Number)
+#     r.derivs = tuple_setindex(r.derivs, x, Val{i})
+#     return r
+# end
 function DiffResults.derivative!(r::GradResult, x::AbstractArray)
     copyto!(r.grad, x)
     return r
@@ -52,14 +52,14 @@ function DiffResults.derivative!(r::HessianDiffResult, x::AbstractArray, ::Type{
     copyto!(r.hess, x)
     return r
 end
-function DiffResults.derivative!(f, r::GradResult, x::Number)
-    r.grad = f(x)
-    return r
-end
-function DiffResults.derivative!(f, r::GradResult, x::AbstractArray)
-    map!(f, r.grad, x)
-    return r
-end
+# function DiffResults.derivative!(f, r::GradResult, x::Number)
+#     r.grad = f(x)
+#     return r
+# end
+# function DiffResults.derivative!(f, r::GradResult, x::AbstractArray)
+#     map!(f, r.grad, x)
+#     return r
+# end
 
 
 function GradientDiffResult(x::SizedVector{P,T}) where {T,P}
@@ -77,25 +77,21 @@ abstract type Configuration{P,V,F} end
 
 struct GradientConfiguration{P,V,F,T,ND,DG,SV_V <: SizedVector{P,V}} <: Configuration{P,V,F}
     f::F
-    result::GradientDiffResult{V,SV_V}
+    result::GradientDiffResult{V,P,SV_V}
     gconfig::ForwardDiff.GradientConfig{T,V,ND,DG}
 end
 
 struct HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2, SV_V <: SizedVector{P,V}, SQM <: SizedSquareMatrix{P,V},
                                         SV_D <: SizedVector{P,ForwardDiff.Dual{T,V,ND}} } <: Configuration{P,V,F}
     f::F
-    result::HessianDiffResult{V,SV_V,SQM}
-    inner_result::GradientDiffResult{ForwardDiff.Dual{T,V,ND},SV_D}
+    result::HessianDiffResult{V,P,SV_V,SQM}
+    inner_result::GradientDiffResult{ForwardDiff.Dual{T,V,ND},P,SV_D}
     jacobian_config::ForwardDiff.JacobianConfig{T,V,ND,DJ}
     gradient_config::ForwardDiff.GradientConfig{T,ForwardDiff.Dual{T,V,ND},ND,DG}
     gconfig::ForwardDiff.GradientConfig{T2,V,ND,DG2}
 end
-# function HessianConfiguration(f::F, result::HessianDiffResult{V,SV_V,SQM}, inner_result::GradientDiffResult{ForwardDiff.Dual{T,V,ND},SV_D}, jacobian_config::ForwardDiff.JacobianConfig{T,V,ND,DJ}, gradient_config::ForwardDiff.GradientConfig{T,ForwardDiff.Dual{T,V,ND},ND,DG}, gconfig::ForwardDiff.GradientConfig{T2,V,ND,DG2}) where {P,V,F,T,T2,ND,DJ,DG,DG2, SV_V <: SizedVector{P,V}, SQM <: SizedSquareMatrix{P,V},
-#                                         SV_D <: SizedVector{P,ForwardDiff.Dual{T,V,ND}} }
-#     HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2, SV_V, SQM, SV_D}(
-#         f, result, inner_result, jacobian_config, gradient_config, gconfig
-#     )
-# end
+
+
 struct TwiceDifferentiable{P,T,F,C<:Configuration{P,T,F}, SV_V <: SizedVector{P,T}} <: AutoDiffDifferentiable{P,T,F}
     x_f::SV_V # x used to evaluate f (stored in F)
     x_df::SV_V # x used to evaluate df (stored in DF)
@@ -184,16 +180,21 @@ end
 end
 # @noinline set_gradient!(res, ∇) = res.derivs = ∇ #obj.config.result.derivs = (gradient(obj),)
 # @noinline set_hessian!(res, ∇Λ) = res.derivs = ∇Λ # obj.config.result.derivs = (gradient(obj), hessian(obj))
-@inline function fdf(obj::TwiceDifferentiable, x)
+@inline function fdf(obj::AutoDiffDifferentiable, x)
     obj.config.result.grad = gradient(obj)
-    obj.config.result.hess = hessian(obj)
     ForwardDiff.gradient!(obj.config.result, obj.config.f, x, obj.config.gconfig, Val{false}())
     # DiffResults.value(obj.config.result)
     obj.config.result.value
 end
-@inline function fdf(obj::OnceDifferentiable, x)
+@inline function scale_fdf(obj::AutoDiffDifferentiable, x, scale_target)
     obj.config.result.grad = gradient(obj)
-    ForwardDiff.gradient!(obj.config.result, obj.config.f, x, obj.config.gconfig, Val{false}())
+    scale = scale_gradient!(obj.config.result, obj.config.f, x, scale_target, obj.config.gconfig, Val{false}())
+    # DiffResults.value(obj.config.result)
+    obj.config.result.value, scale
+end
+@inline function scaled_fdf(obj::AutoDiffDifferentiable, x, scale)
+    obj.config.result.grad = gradient(obj)
+    scaled_gradient!(obj.config.result, obj.config.f, x, scale, obj.config.gconfig, Val{false}())
     # DiffResults.value(obj.config.result)
     obj.config.result.value
 end
