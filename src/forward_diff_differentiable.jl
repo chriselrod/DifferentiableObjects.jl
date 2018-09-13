@@ -367,3 +367,13 @@ end
     end
     return duals
 end
+function ForwardDiff.extract_jacobian!(::Type{T}, result::SizedSIMDMatrix{M,N}, ydual::AbstractArray, n) where {M,N,T}
+    # out_reshaped = reshape(result, length(ydual), n)
+    # @inbounds for col in 1:size(out_reshaped, 2), row in 1:size(out_reshaped, 1)
+    #     out_reshaped[row, col] = partials(T, ydual[row], col)
+    # end
+    @inbounds for col in 1:N, row in 1:M
+        result[row, col] = ForwardDiff.partials(T, ydual[row], col)
+    end
+    return result
+end

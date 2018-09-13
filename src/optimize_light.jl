@@ -58,14 +58,9 @@ function BFGSState2(::Val{P}, ::Type{T} = Float64) where {P,T}
 end
 function initial_invH!(state::BFGSState2{P,T}) where {P,T}
     invH = state.invH
-    @inbounds for i = 1:P
-        for j ∈ 1:i-1
-            invH[j,i] = zero(T)
-        end
-        invH[i,i] = one(T)
-        for j ∈ i+1:P
-            invH[j,i] = zero(T)
-        end
+    fill!(invH, zero(T))
+    @inbounds for p = 1:P
+        invH[p,p] = one(T)
     end
 end
 
@@ -171,8 +166,7 @@ function optimize_light!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
-        # while (isinf(ϕx_1) || isnan(ϕx_1)) && iterfinite < iterfinitemax
-        while isinf(ϕx_1) && iterfinite < iterfinitemax
+        while !isfinite(ϕx_1) && iterfinite < iterfinitemax
             iterfinite += 1
             α_1 = α_2
             α_2 = T(0.5)*α_1
@@ -344,6 +338,7 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
     f_calls = 0
     g_calls = 0
     local scale::T
+    local ϕ_0::T
     for n = 1:N
         # res = ForwardDiff.gradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
         # ∇ = gradient!(d, x_old)
@@ -357,10 +352,11 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
             isfinite(ϕ_0) || return T(NaN), scale
             SIMDArrays.maximum_abs(∇) < tol && return ϕ_0, scale
         else # update hessian
-
+            ϕ_old = ϕ_0
             ϕ_0 = scaled_fdf(obj, x_old, scale); f_calls +=1; g_calls +=1;
             ∇ = gradient(obj)
 
+            norm(ϕ_0 - ϕ_old) <= tol*max(norm(ϕ_0),norm(ϕ_old)) && return ϕ_0, scale
             isfinite(ϕ_0) || return T(NaN), scale
             SIMDArrays.maximum_abs(∇) < tol && return ϕ_0, scale
             # y = jx - jold
@@ -418,8 +414,7 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
-        # while (isinf(ϕx_1) || isnan(ϕx_1)) && iterfinite < iterfinitemax
-        while isinf(ϕx_1) && iterfinite < iterfinitemax
+        while !isfinite(ϕx_1) && iterfinite < iterfinitemax
             iterfinite += 1
             α_1 = α_2
             α_2 = T(0.5)*α_1
