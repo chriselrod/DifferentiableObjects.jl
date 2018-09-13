@@ -36,10 +36,6 @@ const GradResult{V,P,G} = Union{GradientDiffResult{V,P,G},HessianDiffResult{V,P,
 @inline DiffResults.value!(f, r::GradResult, x::Number) = (r.value = f(x); return r)
 # @inline DiffResults.value!(f, r::GradResult, x::AbstractArray) = (map!(f, value(r), x); return r)
 
-# function DiffResults.derivative!(r::GradResult, x::Number)
-#     r.derivs = tuple_setindex(r.derivs, x, Val{i})
-#     return r
-# end
 function DiffResults.derivative!(r::GradResult, x::AbstractArray)
     copyto!(r.grad, x)
     return r
@@ -168,18 +164,17 @@ For DynamicHMC support. Copies data.
 """
 @inline function (obj::OnceDifferentiable)(x)
     fdf(obj, x)
-    DiffResults.ImmutableDiffResult(-obj.config.result.value, (-1 .* obj.config.result.derivs[1],))
+    DiffResults.ImmutableDiffResult(-obj.config.result.value, (-1 .* obj.config.result.grad,))
 end
 @inline function (obj::TwiceDifferentiable)(x)
     fdf(obj, x)
-    DiffResults.ImmutableDiffResult(-obj.config.result.value, (-1 .* obj.config.result.derivs[1],))
+    DiffResults.ImmutableDiffResult(-obj.config.result.value, (-1 .* obj.config.result.grad,))
 end
 
 @inline function df(obj::AutoDiffDifferentiable, x)
     ForwardDiff.gradient!(gradient(obj), obj.config.f, x, obj.config.gconfig, Val{false}())
 end
-# @noinline set_gradient!(res, ∇) = res.derivs = ∇ #obj.config.result.derivs = (gradient(obj),)
-# @noinline set_hessian!(res, ∇Λ) = res.derivs = ∇Λ # obj.config.result.derivs = (gradient(obj), hessian(obj))
+
 @inline function fdf(obj::AutoDiffDifferentiable, x)
     obj.config.result.grad = gradient(obj)
     ForwardDiff.gradient!(obj.config.result, obj.config.f, x, obj.config.gconfig, Val{false}())
