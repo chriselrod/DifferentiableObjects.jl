@@ -3,11 +3,9 @@
 using SIMDArrays, DifferentiableObjects, StaticArrays
 
 
-# @inline rosenbrock(x) =  (@inbounds out = (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2; out)
-
-function rosenbrock(x::Union{<:SVector{P,T},SizedSIMDVector{P,T}}) where {P,T}
+function rosenbrock(x::AbstractArray{T}) where T
     out = zero(T)
-    @inbounds for i ∈ 2:2:P
+    @inbounds for i ∈ 2:2:length(x)
         out += 100abs2(abs2(x[i-1]) - x[i]) + abs2(x[i-1] - 1)
     end
     out
@@ -38,9 +36,22 @@ soptimize(rosenbrock, sx)
 @benchmark soptimize(rosenbrock, $sx)
 @benchmark soptimize(rosenbrock, $sx, StaticOptim.Order3())
 
+using Optim, LineSearches
+xa = fill(3.2, 6);
+hz = Optim.BFGS();
+backtrack2 = Optim.BFGS(linesearch = LineSearches.BackTracking(order = 2));
+backtrack3 = Optim.BFGS(linesearch = LineSearches.BackTracking(order = 3));
+@benchmark optimize(rosenbrock, $xa, $hz)
+@benchmark optimize(rosenbrock, $xa, $hz; autodiff = :forward)
+@benchmark optimize(rosenbrock, $xa, $backtrack2)
+@benchmark optimize(rosenbrock, $xa, $backtrack2; autodiff = :forward)
+@benchmark optimize(rosenbrock, $xa, $backtrack3)
+@benchmark optimize(rosenbrock, $xa, $backtrack3; autodiff = :forward)
 
 
 
+
+# @inline rosenbrock(x) =  (@inbounds out = (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2; out)
 
 # initial_x = zero(SizedSIMDVector{2,Float64});
 # d = OnceDifferentiable(rosenbrock, initial_x);
