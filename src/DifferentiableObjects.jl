@@ -8,12 +8,14 @@ using   DiffResults,
         # LineSearches,
         StaticArrays, # Explicitly support both
         jBLAS,
-        SIMD,
+        SIMDPirates,
         SIMDArrays,
         Parameters,
         LinearAlgebra,
         Parameters,
         NaNMath
+
+using SIMDPirates: vadd, vmult, vbroadcast, Vec
 
 import  NLSolversBase: AbstractObjective,
         value!!,

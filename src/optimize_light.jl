@@ -64,6 +64,9 @@ function initial_invH!(state::BFGSState2{P,T}) where {P,T}
     end
 end
 
+@noinline linesearch_failure(iterations) = error("Linesearch failed to converge, reached maximum iterations $(iterations).",
+α_2)
+
 """
 Optimum value is stored in state.x_old.
 
@@ -184,10 +187,7 @@ function optimize_light!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
             iteration += 1
 
             # Ensure termination
-            if iteration > iterations
-                error("Linesearch failed to converge, reached maximum iterations $(iterations).",
-                α_2)
-            end
+            iteration > iterations && linesearch_failure(iterations)
 
             # Shrink proposed step-size:
             @fastmath if order == 2 || iteration == 1
@@ -255,7 +255,7 @@ end
     q = quote
         ptr_C = pointer(C)
         ptr_B = pointer(B)
-        vα = $V(α)
+        vα = vbroadcast($V, α)
     end
 
 
@@ -268,21 +268,21 @@ end
         push!(q.args,
             quote
                 for i ∈ 0:$(4VLT):$(4VLT*(rep-1))
-                    vs_0 = vload($V, ptr_C + i) * vα
+                    vs_0 = vmult(vload($V, ptr_C + i), vα)
                     vstore(vs_0, ptr_C + i)
-                    vstore(vload($V, ptr_B + i) + vs_0, ptr_B + i)
+                    vstore(vadd(vload($V, ptr_B + i), vs_0), ptr_B + i)
 
-                    vs_1 = vload($V, ptr_C + i + $VLT) * vα
+                    vs_1 = vmult(vload($V, ptr_C + i + $VLT), vα)
                     vstore(vs_1, ptr_C + i + $VLT)
-                    vstore(vload($V, ptr_B + i + $VLT) + vs_1, ptr_B + i + $VLT)
+                    vstore(vadd(vload($V, ptr_B + i + $VLT), vs_1), ptr_B + i + $VLT)
 
-                    vs_2 = vload($V, ptr_C + i + $(2VLT)) * vα
+                    vs_2 = vmult(vload($V, ptr_C + i + $(2VLT)), vα)
                     vstore(vs_2, ptr_C + i + $(2VLT))
-                    vstore(vload($V, ptr_B + i + $(2VLT)) + vs_2, ptr_B + i + $(2VLT))
+                    vstore(vadd(vload($V, ptr_B + i + $(2VLT)), vs_2), ptr_B + i + $(2VLT))
 
-                    vs_3 = vload($V, ptr_C + i + $(3VLT)) * vα
+                    vs_3 = vmult(vload($V, ptr_C + i + $(3VLT)), vα)
                     vstore(vs_3, ptr_C + i + $(3VLT))
-                    vstore(vload($V, ptr_B + i + $(3VLT)) + vs_3, ptr_B + i + $(3VLT))
+                    vstore(vadd(vload($V, ptr_B + i + $(3VLT)), vs_3), ptr_B + i + $(3VLT))
                 end
             end
         )
@@ -291,9 +291,9 @@ end
         offset = VLT*(i + 4rep)
         push!(q.args,
             quote
-                $(Symbol(:vs_,i)) = vload($V, ptr_C + $offset) * vα
+                $(Symbol(:vs_,i)) = vmult(vload($V, ptr_C + $offset), vα)
                 vstore($(Symbol(:vs_,i)), ptr_C + $offset)
-                vstore(vload($V, ptr_B + $offset) + $(Symbol(:vs_,i)), ptr_B + $offset)
+                vstore(vadd(vload($V, ptr_B + $offset), $(Symbol(:vs_,i))), ptr_B + $offset)
             end
         )
     end
