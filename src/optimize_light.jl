@@ -10,6 +10,9 @@ end
 function BackTracking2(::Val{O} = Val(3); c_1::TF = 1e-4, ρ_hi::TF = 0.5, ρ_lo::TF = 0.1, iterations::TI = 1_000, maxstep::TF = Inf) where {O,TF,TI}
     BackTracking2{O,TF,TI}(c_1, ρ_hi, ρ_lo, iterations, maxstep)
 end
+function BackTracking2{TF}(::Val{O} = Val(3); c_1 = TF(1e-4), ρ_hi = TF(0.5), ρ_lo = TF(0.1), iterations::TI = 1_000, maxstep = TF(Inf)) where {O,TF,TI}
+    BackTracking2{O,TF,TI}(c_1, ρ_hi, ρ_lo, iterations, maxstep)
+end
 
 
 # struct StaticOptimizationResults{T, Tf}

@@ -40,7 +40,7 @@
     order::TI = 3
     maxstep::TF = Inf
 end
-BackTracking{TF}(args...; kwargs...) where TF = Backtracking{TF,Int}(args...; kwargs...)
+BackTracking{TF}(args...; kwargs...) where TF = BackTracking{TF,Int}(args...; kwargs...)
 
 function linesearch!(ls::BackTracking, df::AbstractObjective, x::AbstractArray{T}, s::AbstractArray{T},
                             α_0::Tα, x_new::AbstractArray{T}, ϕ_0, dϕ_0) where {T, Tα}

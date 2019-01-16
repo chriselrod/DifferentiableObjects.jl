@@ -101,6 +101,14 @@ function BFGS(;
     ) where {IL, L, H, M <: Manifold}
     BFGS{M, IL, L, H}(alphaguess, linesearch, initial_invH, manifold)
 end
+function BFGS{T}(;
+        alphaguess::IL = InitialStatic{T,false}(one(T)),
+        linesearch::L = BackTracking{T}(),
+        initial_invH::H = initial_diaginvH,
+        manifold::M = Flat()
+    ) where {T, IL <: InitialStatic{T}, L <: BackTracking{T}, H, M <: Manifold}
+    BFGS{M, IL, L, H}(alphaguess, linesearch, initial_invH, manifold)
+end
 
 # Base.summary(::BFGS) = "BFGS"
 
