@@ -66,6 +66,7 @@ function initial_invH!(state::BFGSState2{P,T}) where {P,T}
         invH[p,p] = one(T)
     end
 end
+@inline optimum(s::BFGSState2) = state.x_old
 
 @noinline linesearch_failure(iterations) = error("Linesearch failed to converge, reached maximum iterations $(iterations).",
 α_2)
@@ -335,7 +336,7 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
     # @unpack c_1, ρ_hi, ρ_lo, iterations = ls
     c_1, ρ_hi, ρ_lo, iterations = ls.c_1, ls.ρ_hi, ls.ρ_lo, ls.iterations
     iterfinitemax = round(Int,-log2(eps(eltype(x))))
-    sqrttol = sqrt(eps(Float64))
+    sqrttol = sqrt(eps(T))
     α_0 = one(T)
     N = 200
     f_calls = 0
@@ -492,5 +493,5 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
         copyto!(∇_old, ∇)
     end
     # return StaticOptimizationResults(NaN, N, tol, f_calls, g_calls, false), x_old
-    NaN, scale
+    T(NaN), scale
 end
