@@ -66,10 +66,9 @@ function initial_invH!(state::BFGSState2{P,T}) where {P,T}
         invH[p,p] = one(T)
     end
 end
-@inline optimum(s::BFGSState2) = state.x_old
+@inline optimum(s::BFGSState2) = s.x_old
 
-@noinline linesearch_failure(iterations) = error("Linesearch failed to converge, reached maximum iterations $(iterations).",
-α_2)
+@noinline linesearch_failure(iterations) = error("Linesearch failed to converge, reached maximum iterations $(iterations).")
 
 """
 Optimum value is stored in state.x_old.
@@ -310,7 +309,7 @@ end
 Similar to optimize_light!, but it scales the function so that
 norm(gradient(f, initial_x)) ≈ 10
 """
-function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking2{order}, scale_target=T(10), tol = 1e-8) where {P,T,L,order}
+function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking2{order}, scale_target=T(10), tol = T(1e-8)) where {P,T,L,order}
     # res = DiffResults.GradientResult(x)
     # ls = BackTracking()
     # order = ordernum(bto)
@@ -414,7 +413,9 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
         # end
         SIMDArrays.vadd!(x_new, x_old, α_1, s)
         # ϕx_1 = f(x + α_1*s); f_calls += 1;
+        ϕx_1_before = ϕx_1
         ϕx_1 = f(obj, state.x_new) * scale; f_calls += 1;
+        # @show typeof(ϕx_1_before), typeof(ϕx_1), typeof(f(obj, state.x_new)), typeof(scale)
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
@@ -436,10 +437,7 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
             iteration += 1
 
             # Ensure termination
-            if iteration > iterations
-                error("Linesearch failed to converge, reached maximum iterations $(iterations).",
-                α_2)
-            end
+            iteration > iterations && linesearch_failure(iterations)
 
             # Shrink proposed step-size:
             @fastmath if order == 2 || iteration == 1
@@ -450,13 +448,14 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
                 # guaranteed backtracking factor 0.5 * (1-c_1)^{-1} which is < 1
                 # provided that c_1 < 1/2; the backtrack_condition at the beginning
                 # of the function guarantees at least a backtracking factor ρ.
+                # @show typeof(dϕ_0), typeof(ϕx_1), typeof(ϕ_0)
                 α_tmp = - (dϕ_0 * α_2*α_2) / ( T(2) * (ϕx_1 - ϕ_0 - dϕ_0*α_2) )
             else
                 div = one(T) / (α_1*α_1 * α_2*α_2 * (α_2 - α_1))
                 a = (α_1*α_1*(ϕx_1 - ϕ_0 - dϕ_0*α_2) - α_2*α_2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
                 b = (-α_1*α_1*α_1*(ϕx_1 - ϕ_0 - dϕ_0*α_2) + α_2*α_2*α_2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
-
-                if norm(a) <= eps(Float64) + sqrttol*norm(a)
+                # @show norm(a) <= eps(T) + sqrttol*norm(a)
+                if norm(a) <= eps(T) + sqrttol*norm(a)
                     α_tmp = dϕ_0 / (T(2)*b)
                 else
                     # discriminant
@@ -467,6 +466,7 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
             end
             α_1 = α_2
 
+            # @show typeof(α_tmp)
             α_tmp = NaNMath.min(α_tmp, α_2*ρ_hi) # avoid too small reductions
             α_2 = NaNMath.max(α_tmp, α_2*ρ_lo) # avoid too big reductions
             # α_tmp = min(α_tmp, α_2*ρ_hi) # avoid too small reductions
@@ -477,7 +477,7 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
             # @fastmath @inbounds @simd for i ∈ 1:L
             #     x_new[i] = x_old[i] + α_2*s[i]
             # end
-            SIMDArrays.vadd!(x_new, x_old, α_2, s)
+            SIMDArrays.vadd!(x_new, x_old, α_2::T, s)
             ϕx_0, ϕx_1 = ϕx_1, f(obj, state.x_new) * scale; f_calls += 1;
         end
         alpha, fpropose = α_2, ϕx_1
