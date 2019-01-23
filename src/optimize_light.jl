@@ -271,19 +271,19 @@ end
         push!(q.args,
             quote
                 for i ∈ 0:$(4VLT):$(4VLT*(rep-1))
-                    vs_0 = vmult(vload($V, ptr_C + i), vα)
+                    vs_0 = evmul(vload($V, ptr_C + i), vα)
                     vstore(vs_0, ptr_C + i)
                     vstore(vadd(vload($V, ptr_B + i), vs_0), ptr_B + i)
 
-                    vs_1 = vmult(vload($V, ptr_C + i + $VLT), vα)
+                    vs_1 = evmul(vload($V, ptr_C + i + $VLT), vα)
                     vstore(vs_1, ptr_C + i + $VLT)
                     vstore(vadd(vload($V, ptr_B + i + $VLT), vs_1), ptr_B + i + $VLT)
 
-                    vs_2 = vmult(vload($V, ptr_C + i + $(2VLT)), vα)
+                    vs_2 = evmul(vload($V, ptr_C + i + $(2VLT)), vα)
                     vstore(vs_2, ptr_C + i + $(2VLT))
                     vstore(vadd(vload($V, ptr_B + i + $(2VLT)), vs_2), ptr_B + i + $(2VLT))
 
-                    vs_3 = vmult(vload($V, ptr_C + i + $(3VLT)), vα)
+                    vs_3 = evmul(vload($V, ptr_C + i + $(3VLT)), vα)
                     vstore(vs_3, ptr_C + i + $(3VLT))
                     vstore(vadd(vload($V, ptr_B + i + $(3VLT)), vs_3), ptr_B + i + $(3VLT))
                 end
@@ -294,7 +294,7 @@ end
         offset = VLT*(i + 4rep)
         push!(q.args,
             quote
-                $(Symbol(:vs_,i)) = vmult(vload($V, ptr_C + $offset), vα)
+                $(Symbol(:vs_,i)) = evmul(vload($V, ptr_C + $offset), vα)
                 vstore($(Symbol(:vs_,i)), ptr_C + $offset)
                 vstore(vadd(vload($V, ptr_B + $offset), $(Symbol(:vs_,i))), ptr_B + $offset)
             end
@@ -350,6 +350,7 @@ function optimize_scale!(state, obj, x::SizedSIMDVector{P,T,L}, ls::BackTracking
 
         if n == 1 # calculate scale
             ϕ_0, scale = scale_fdf(obj, x_old, scale_target); f_calls +=1; g_calls +=1;
+            # @show scale
             ∇ = gradient(obj)
 
             isfinite(ϕ_0) || return T(NaN), scale

@@ -15,7 +15,7 @@ using   DiffResults,
         Parameters,
         NaNMath
 
-using SIMDPirates: vadd, vmult, vbroadcast, Vec
+using SIMDPirates: vadd, evmul, vbroadcast, Vec
 
 import  NLSolversBase: AbstractObjective,
         value!!,
