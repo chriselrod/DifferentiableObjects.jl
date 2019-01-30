@@ -344,7 +344,7 @@ end
 end
 
 @inline function ForwardDiff.seed!(duals::SizedSIMDVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
-                                    seed::ForwardDiff.Partials{N,V} = zero(Partials{N,V})) where {T,V,N,P}
+                                    seed::ForwardDiff.Partials{N,V} = zero(ForwardDiff.Partials{N,V})) where {T,V,N,P}
     offset = index - 1
     @inbounds for i in 1:N
         j = i + offset

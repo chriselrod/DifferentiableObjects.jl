@@ -59,10 +59,10 @@ function chunk_mode_gradient_expr(N, xlen, ydual_expr)
         # seed work vectors
         xdual = cfg.duals
         seeds = cfg.seeds
-        seed!(xdual, x)
+        ForwardDiff.seed!(xdual, x)
 
         # do first chunk manually to calculate output type
-        seed!(xdual, x, 1, seeds)
+        ForwardDiff.seed!(xdual, x, 1, seeds)
         $(ydual_expr)
 
         ForwardDiff.extract_gradient_chunk!(T, result, ydual, 1, $N)
@@ -92,7 +92,7 @@ end
 
 ## method defined for better performance of regular chunk mode gradients.
 @generated function ForwardDiff.chunk_mode_gradient!(result::GradResult{V,P}, f::F, x,
-                                            cfg::ForwardDiff.GradientConfig{T,V,N}) where {F,T,V,N,P}
+                                            cfg::ForwardDiff.GradientConfig{T,V,N}) where {F,V,T,N,P}
     chunk_mode_gradient_expr(N, P, :(ydual = f(xdual)))
 end
 @generated function scaled_chunk_mode_gradient!(result::GradResult{V,P}, f::F, x,
