@@ -272,20 +272,20 @@ end
             quote
                 for i ∈ 0:$(4VLT):$(4VLT*(rep-1))
                     vs_0 = evmul(vload($V, ptr_C + i), vα)
-                    vstore(vs_0, ptr_C + i)
-                    vstore(vadd(vload($V, ptr_B + i), vs_0), ptr_B + i)
+                    vstore!(ptr_C + i, vs_0)
+                    vstore!(ptr_B + i, vadd(vload($V, ptr_B + i), vs_0))
 
                     vs_1 = evmul(vload($V, ptr_C + i + $VLT), vα)
-                    vstore(vs_1, ptr_C + i + $VLT)
-                    vstore(vadd(vload($V, ptr_B + i + $VLT), vs_1), ptr_B + i + $VLT)
+                    vstore!(ptr_C + i + $VLT, vs_1)
+                    vstore!(ptr_B + i + $VLT, vadd(vload($V, ptr_B + i + $VLT), vs_1))
 
                     vs_2 = evmul(vload($V, ptr_C + i + $(2VLT)), vα)
-                    vstore(vs_2, ptr_C + i + $(2VLT))
-                    vstore(vadd(vload($V, ptr_B + i + $(2VLT)), vs_2), ptr_B + i + $(2VLT))
+                    vstore!(ptr_C + i + $(2VLT), vs_2)
+                    vstore!(ptr_B + i + $(2VLT), vadd(vload($V, ptr_B + i + $(2VLT)), vs_2))
 
                     vs_3 = evmul(vload($V, ptr_C + i + $(3VLT)), vα)
-                    vstore(vs_3, ptr_C + i + $(3VLT))
-                    vstore(vadd(vload($V, ptr_B + i + $(3VLT)), vs_3), ptr_B + i + $(3VLT))
+                    vstore!(ptr_C + i + $(3VLT), vs_3)
+                    vstore!(ptr_B + i + $(3VLT), vadd(vload($V, ptr_B + i + $(3VLT)), vs_3))
                 end
             end
         )
@@ -295,8 +295,8 @@ end
         push!(q.args,
             quote
                 $(Symbol(:vs_,i)) = evmul(vload($V, ptr_C + $offset), vα)
-                vstore($(Symbol(:vs_,i)), ptr_C + $offset)
-                vstore(vadd(vload($V, ptr_B + $offset), $(Symbol(:vs_,i))), ptr_B + $offset)
+                vstore!(ptr_C + $offset, $(Symbol(:vs_,i)))
+                vstore!(ptr_B + $offset, vadd(vload($V, ptr_B + $offset), $(Symbol(:vs_,i))))
             end
         )
     end

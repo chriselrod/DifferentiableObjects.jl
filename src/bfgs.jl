@@ -221,7 +221,7 @@ function reset_search_direction!(state, d, method::BFGS)
     end
     return true
 end
-function update_state!(d, state, method)
+function update_state!(d, state::AbstractOptimizerState, method)
 
     # @show state.s, state.invH, vec(gradient(d))
     # Set the search direction
