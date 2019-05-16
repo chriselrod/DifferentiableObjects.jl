@@ -33,9 +33,12 @@ mutable struct HessianDiffResult{V,P,R,L} <: DiffResults.DiffResult{2,V,Tuple{Co
     grad::ConstantFixedSizePaddedVector{P,V,R,R}
     hess::ConstantFixedSizePaddedMatrix{P,P,V,R,L}
     value::V
-    function HessianDiffResult{V,P}(::UndefInitializer) where {V, P}
+    function HessianDiffResult{V,P,R,L}(::UndefInitializer) where {V,P,R,L}
+        new{V,P,R,L}()
+    end
+    @generated function HessianDiffResult{V,P}(::UndefInitializer) where {V, P}
         N,R,L = PaddedMatrices.calc_NPL((P,P), V)
-        :(new{$V,$P,$R,$L}())
+        :(HessianDiffResult{$V,$P,$R,$L}(undef))
     end
     function GradientDiffResult(g::ConstantFixedSizePaddedVector{P,V,R,R}, H::ConstantFixedSizePaddedMatrix{P,P,V,R,L}, v::V = zero(V)) where {P,V,R,L}
         GradientDiffResult{P,V,R,R}(g, H, v)
