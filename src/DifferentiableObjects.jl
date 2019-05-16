@@ -1,21 +1,24 @@
 
-__precompile__()
 module DifferentiableObjects
 
 using   ForwardDiff
 
 using   DiffResults,
-        # LineSearches,
         StaticArrays, # Explicitly support both
-        jBLAS,
         SIMDPirates,
-        SIMDArrays,
+        PaddedMatrices,
         Parameters,
         LinearAlgebra,
         Parameters,
-        NaNMath
+        NaNMath,
+        VectorizationBase
 
 using SIMDPirates: vadd, evmul, vbroadcast, Vec
+using PaddedMatrices:   AbstractFixedSizePaddedVector, AbstractFixedSizePaddedMatrix,
+                        AbstractMutableFixedSizePaddedVector, AbstractMutableFixedSizePaddedMatrix,
+                        ConstantFixedSizePaddedVector, ConstantFixedSizePaddedMatrix,
+                        MutableFixedSizePaddedVector, MutableFixedSizePaddedMatrix,
+                        AbstractFixedSizePaddedArray, PtrVector, PtrMatrix
 
 import  NLSolversBase: AbstractObjective,
         value!!,
@@ -49,10 +52,35 @@ export  DifferentiableObject,
 
 abstract type DifferentiableObject{P} <: AbstractObjective end
 
-const SizedVector{P,T} = Union{SizedSIMDVector{P,T},MVector{P,T}}
-const SizedSquareMatrix{P,T} = Union{SizedSIMDMatrix{P,P,T},MMatrix{P,P,T}}
-const SymmetricMatrix{P,T} = Symmetric{T, <: SizedSIMDMatrix{P,P,T}}
+const SizedVector{P,T} = Union{AbstractFixedSizePaddedVector{P,T},MVector{P,T}}
+const SizedSquareMatrix{P,T} = Union{AbstractFixedSizePaddedMatrix{P,P,T},MMatrix{P,P,T}}
+const SymmetricMatrix{P,T} = Symmetric{T, <: AbstractFixedSizePaddedMatrix{P,P,T}}
 # debug() = true
+
+###
+### This replaces the default fallback, which uses unsafe_load.
+###
+@inline function VectorizationBase.load(ptr::Ptr{D}) where {T, V, N, D <: ForwardDiff.Dual{T,V,N}}
+    vptr = Base.unsafe_convert(Ptr{V}, ptr)
+    D(
+        VectorizationBase.load(vptr),
+        ForwardDiff.Partials{N,V}(
+            ntuple(n -> VectorizationBase.load(vptr + n*sizeof(V)), Val(N))
+        )
+    )
+end
+### This replaces the default fallback, which uses unsafe_store!
+@inline function VectorizationBase.store!(ptr::Ptr{D}, v::D) where {T,V,N, D <: ForwardDiff.Dual{T,V,N}}
+    vptr = Base.unsafe_convert(Ptr{V}, ptr)
+    val = v.value
+    partials = v.partials
+    VectorizationBase.store!(vptr, val)
+    # Compiler should unroll
+    @inbounds @simd for n ∈ 1:N
+        VectorizationBase.store!(vptr + n*sizeof(V), partials[n])
+    end
+    v
+end
 
 include("initial_linesearch_guess.jl")
 include("backtracking.jl")
@@ -60,7 +88,7 @@ include("backtracking.jl")
 include("forward_diff_differentiable.jl")
 include("scaled_gradients.jl")
 include("bfgs.jl")
-include("optimize.jl")
+# include("optimize.jl")
 include("optimize_light.jl")
 # include("miscellaneous.jl")
 

@@ -6,7 +6,7 @@ The current autodiff backend is `ForwardDiff.jl`. I am excited about adding supp
 The target is applications that require repeated optimizations. Thus the API is a little unwieldy at the momeny, forcing you to manually preallocate all the memory needed. Example use:
 
 ```julia
-julia> using SIMDArrays, DifferentiableObjects, StaticArrays
+julia> using PaddedMatrices, DifferentiableObjects
 
 julia> function rosenbrock(x::AbstractArray{T}) where T
            out = zero(T)
@@ -17,12 +17,11 @@ julia> function rosenbrock(x::AbstractArray{T}) where T
        end
 rosenbrock (generic function with 1 method)
 
-julia> const P = 6
-6
+julia> P = 6;
 
-julia> state = DifferentiableObjects.BFGSState2(Val(P));
+julia> state = DifferentiableObjects.BFGSState2{6}(undef);
 
-julia> initial_x = fill(SizedSIMDVector{P,Float64}, 3.2);
+julia> initial_x = fill!(PaddedMatrices.MutableFixedSizePaddedVector{P,Float64}(undef), 3.2);
 
 julia> ls2 = DifferentiableObjects.BackTracking2(Val(2));
 
@@ -30,75 +29,77 @@ julia> ls3 = DifferentiableObjects.BackTracking2(Val(3));
 
 julia> obj = OnceDifferentiable(rosenbrock, initial_x);
 
-julia> DifferentiableObjects.optimize_light!(state, obj, initial_x, ls2), state.x_old
-(4.837813336258326e-21, [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+julia> DifferentiableObjects.optimize_light!(state, obj, initial_x, ls2, 1e-20), state.x_old
+(0.0, [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 
-julia> DifferentiableObjects.optimize_light!(state, obj, initial_x, ls3), state.x_old
-(7.182559121415813e-21, [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+julia> DifferentiableObjects.optimize_light!(state, obj, initial_x, ls3, 1e-20), state.x_old
+(0.0, [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 
-julia> DifferentiableObjects.optimize_scale!(state, obj, initial_x, ls2), state.x_old
-((6.289355761132598e-20, 0.0006327206696054021), [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+julia> DifferentiableObjects.optimize_scale!(state, obj, initial_x, ls2, 10.0, 1e-20), state.x_old
+((0.0, 0.0006327206696054021), [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 
-julia> DifferentiableObjects.optimize_scale!(state, obj, initial_x, ls3), state.x_old
-((6.289355761132598e-20, 0.0006327206696054021), [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+julia> DifferentiableObjects.optimize_scale!(state, obj, initial_x, ls3, 10.0, 1e-20), state.x_old
+((0.0, 0.0006327206696054021), [1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 ```
-The scaled version automatically scales the objective so that the norm of the gradient at the first evaluation is 1.
+The minimum value is 0.0, and optimizing values are 1.0.
+The scaled version automatically scales the objective so that the norm of the gradient at the first evaluation equals the fifth argument, which defaults to 1.0. The default tolerance is 1e-8; I use 1e-20 here so that the results look good without rounding.
 
 This library aims to be fast. For the 6 dimensional Rosenbrock:
 ```julia
 julia> using BenchmarkTools
 
-julia> @benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls2)
+julia> @benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls2, 1e-20)
 BenchmarkTools.Trial: 
   memory estimate:  0 bytes
   allocs estimate:  0
   --------------
-  minimum time:     8.977 μs (0.00% GC)
-  median time:      9.020 μs (0.00% GC)
-  mean time:        9.164 μs (0.00% GC)
-  maximum time:     19.943 μs (0.00% GC)
+  minimum time:     6.451 μs (0.00% GC)
+  median time:      6.506 μs (0.00% GC)
+  mean time:        6.579 μs (0.00% GC)
+  maximum time:     13.280 μs (0.00% GC)
   --------------
   samples:          10000
-  evals/sample:     3
+  evals/sample:     5
 
-julia> @benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls3)
+julia> @benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls3, 1e-20)
 BenchmarkTools.Trial: 
   memory estimate:  0 bytes
   allocs estimate:  0
   --------------
-  minimum time:     15.681 μs (0.00% GC)
-  median time:      15.741 μs (0.00% GC)
-  mean time:        15.938 μs (0.00% GC)
-  maximum time:     29.434 μs (0.00% GC)
+  minimum time:     9.585 μs (0.00% GC)
+  median time:      9.655 μs (0.00% GC)
+  mean time:        9.841 μs (0.00% GC)
+  maximum time:     26.807 μs (0.00% GC)
   --------------
   samples:          10000
   evals/sample:     1
 
-julia> @benchmark DifferentiableObjects.optimize_scale!($state, $obj, $initial_x, $ls2)
+julia> @benchmark DifferentiableObjects.optimize_scale!($state, $obj, $initial_x, $ls2, 10.0, 1e-20)
 BenchmarkTools.Trial: 
   memory estimate:  0 bytes
   allocs estimate:  0
   --------------
-  minimum time:     8.740 μs (0.00% GC)
-  median time:      8.773 μs (0.00% GC)
-  mean time:        8.924 μs (0.00% GC)
-  maximum time:     20.256 μs (0.00% GC)
+  minimum time:     7.460 μs (0.00% GC)
+  median time:      7.481 μs (0.00% GC)
+  mean time:        7.571 μs (0.00% GC)
+  maximum time:     14.627 μs (0.00% GC)
   --------------
   samples:          10000
-  evals/sample:     3
+  evals/sample:     4
 
-julia> @benchmark DifferentiableObjects.optimize_scale!($state, $obj, $initial_x, $ls3)
+julia> @benchmark DifferentiableObjects.optimize_scale!($state, $obj, $initial_x, $ls3, 10.0, 1e-20)
 BenchmarkTools.Trial: 
   memory estimate:  0 bytes
   allocs estimate:  0
   --------------
-  minimum time:     8.487 μs (0.00% GC)
-  median time:      8.529 μs (0.00% GC)
-  mean time:        8.592 μs (0.00% GC)
-  maximum time:     19.046 μs (0.00% GC)
+  minimum time:     7.462 μs (0.00% GC)
+  median time:      7.487 μs (0.00% GC)
+  mean time:        7.575 μs (0.00% GC)
+  maximum time:     30.459 μs (0.00% GC)
   --------------
   samples:          10000
-  evals/sample:     3
+  evals/sample:     4
+
 ```
 
 For comparison, here is `Optim.jl`, Julia's premier optimization library:

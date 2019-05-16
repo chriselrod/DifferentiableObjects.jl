@@ -3,8 +3,8 @@
 # scaled to behave better under optimization algorithms.
 #
 
-function scale_gradient!(result::GradResult{V,P,G}, f::F, x::AbstractArray, scale_target,
-        cfg::ForwardDiff.GradientConfig{T} = ForwardDiff.GradientConfig(f, x), ::Val{CHK}=Val{true}()) where {T, CHK, F, V,P,L,G<:SizedSIMDVector{P,V,L,L}}
+function scale_gradient!(result::GradResult{V,P,L}, f::F, x::AbstractArray, scale_target,
+        cfg::ForwardDiff.GradientConfig{T} = ForwardDiff.GradientConfig(f, x), ::Val{CHK}=Val{true}()) where {T, CHK, F, V,P,L}
     CHK && ForwardDiff.checktag(T, f, x)
     if ForwardDiff.chunksize(cfg) == length(x)
         ForwardDiff.vector_mode_gradient!(result, f, x, cfg)
@@ -20,7 +20,9 @@ function scale_gradient!(result::GradResult{V,P,G}, f::F, x::AbstractArray, scal
     # Do not scale up the gradient.
     scale = min(one(V), scale_target / norm(∇))
     result.value *= scale
-    SIMDArrays.scale!(∇, scale)
+    @inbounds @simd for l ∈ 1:L
+        ∇[l] *= scale
+    end
     return scale
 end
 function scaled_gradient!(result::GradResult, f::F, x::AbstractArray, scale,
