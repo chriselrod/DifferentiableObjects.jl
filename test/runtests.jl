@@ -1,6 +1,6 @@
 # using Test
 
-using SIMDArrays, DifferentiableObjects, StaticArrays
+using PaddedMatrices, DifferentiableObjects
 
 
 function rosenbrock(x::AbstractArray{T}) where T
@@ -11,10 +11,10 @@ function rosenbrock(x::AbstractArray{T}) where T
     out
 end
 
-const P = 6
+P = 6
 
 state = DifferentiableObjects.BFGSState2(Val(P));
-initial_x = fill(SizedSIMDVector{P,Float64}, 3.2);
+initial_x = fill!(PaddedMatrices.MutableFixedSizePaddedVector{P,Float64}(undef), 3.2);
 ls2 = DifferentiableObjects.BackTracking2(Val(2));
 ls3 = DifferentiableObjects.BackTracking2(Val(3));
 obj = OnceDifferentiable(rosenbrock, initial_x);
@@ -28,6 +28,202 @@ using BenchmarkTools
 @benchmark DifferentiableObjects.optimize_light!($state, $obj, $initial_x, $ls3)
 @benchmark DifferentiableObjects.optimize_scale!($state, $obj, $initial_x, $ls2)
 @benchmark DifferentiableObjects.optimize_scale!($state, $obj, $initial_x, $ls3)
+
+
+
+
+
+
+using PaddedMatrices, DifferentiableObjects
+Base.IndexStyle(::PaddedMatrices.AbstractPaddedVector) = IndexLinear()
+
+function rosenbrock(x::AbstractArray{T}) where {T}
+    out = zero(T)
+    @inbounds for i ∈ 2:2:length(x)
+        out += 100abs2(abs2(x[i-1]) - x[i]) + abs2(x[i-1] - 1)
+    end
+    out
+end
+
+P = 6
+initial_x = fill!(PaddedMatrices.MutableFixedSizePaddedVector{P,Float64}(undef), 3.2);
+obj2 = TwiceDifferentiable(rosenbrock, initial_x);
+
+using ForwardDiff, DiffResults, BenchmarkTools
+x = initial_x;
+c = obj2.config;
+
+hess = DiffResults.hessian(c.result);
+grad = DiffResults.gradient(c.result);
+cfg = c.jacobian_config;
+
+# hessian!(obj2.config, initial_x)
+
+@which ForwardDiff.jacobian!(hess, c, grad, x, cfg, Val{false}())
+
+result = hess;
+f! = c;
+y = grad;
+@which ForwardDiff.vector_mode_jacobian!(result, f!, y, x, cfg)
+
+
+# function vector_mode_jacobian!(result, f!::F, y, x, cfg::JacobianConfig{T,V,N}) where {F,T,V,N}
+#     ydual = vector_mode_dual_eval(f!, y, x, cfg)
+#     map!(d -> value(T,d), y, ydual)
+#     extract_jacobian!(T, result, ydual, N)
+#     extract_value!(T, result, y, ydual)
+#     return result
+# end
+
+T, V, N = ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6,Tuple{MutableFixedSizePaddedArray{Tuple{6},ForwardDiff.Dual{ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6},1,6,6},MutableFixedSizePaddedArray{Tuple{6},ForwardDiff.Dual{ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6},1,6,6}};
+
+@which ForwardDiff.vector_mode_dual_eval(f!, y, x, cfg)
+
+###
+### Here, I can run random benchamrks without a problem.
+###
+
+ydual, xdual = cfg.duals;
+typeof(ydual), typeof(xdual)
+
+ForwardDiff.seed!(xdual, x, cfg.seeds)
+ForwardDiff.seed!(ydual, y)
+# seem to be in the clear, based on repeated
+@benchmark ForwardDiff.seed!(xdual, x, cfg.seeds)
+@benchmark ForwardDiff.seed!(ydual, y)
+
+
+
+# Segfaults
+# f!(ydual, xdual)
+
+
+# segfaults
+@which ForwardDiff.gradient!(c.inner_result, c.f, xdual, c.gradient_config, Val{false}())
+@which ForwardDiff.vector_mode_gradient!(c.inner_result, c.f, xdual, c.gradient_config)
+@which ForwardDiff.vector_mode_dual_eval(c.f, xdual, c.gradient_config)
+
+
+xdualdual = c.gradient_config.duals;
+# underlying tuple of length 0!!!
+f, x = rosenbrock, initial_x;
+result = DifferentiableObjects.HessianDiffResult(x);
+chunk = DifferentiableObjects.Chunk(Val{P}())
+# tag = ForwardDiff.Tag(f, T)
+
+# here we construct a JacobianConfig so that yduals is a PtrVector to DiffResults.gradient(inner_result)
+tag_instance = ForwardDiff.Tag(f, T)
+tag_type = DifferentiableObjects.extract_tag(tag_instance)
+# @show tag
+seeds = ForwardDiff.construct_seeds(ForwardDiff.Partials{P,Float64})
+# inner_result = GradientDiffResult(jacobian_config.duals[2])
+inner_result = DifferentiableObjects.GradientDiffResult{ForwardDiff.Dual{tag_type,Float64,P},P}(undef)
+duals = (DiffResults.gradient(inner_result), similar(x, ForwardDiff.Dual{tag_type,Float64,P}))
+jacobian_config = ForwardDiff.JacobianConfig{tag_type,Float64,P,typeof(duals)}(seeds, duals)
+
+
+# jacobian_config = ForwardDiff.JacobianConfig((f,ForwardDiff.gradient), DiffResults.gradient(result), x, chunk, tag)
+# jacobian_config = ForwardDiff.JacobianConfig((f,ForwardDiff.gradient), DiffResults.gradient(result), x, chunk, tag)
+gradient_config = ForwardDiff.GradientConfig(f, jacobian_config.duals[2], chunk, tag_instance)
+
+
+
+# segfault
+# @benchmark ForwardDiff.seed!(xdualdual, xdual, c.gradient_config.seeds)
+@which ForwardDiff.seed!(xdualdual, xdual, c.gradient_config.seeds)
+# xdualdual's tuple is of length 0!!!
+
+c.f(xdual)
+
+# segfaults
+# @benchmark ForwardDiff.vector_mode_dual_eval(c.f, xdual, c.gradient_config)
+
+ydualdual = ForwardDiff.vector_mode_dual_eval(c.f, xdual, c.gradient_config)
+
+# Segfaults on call
+@which ForwardDiff.extract_gradient!(ForwardDiff.Tag{typeof(rosenbrock),Float64}, c.inner_result, ydualdual)
+
+# @which -> Segfaults!!! Yikes!?!?
+v = ForwardDiff.value(ForwardDiff.Tag{typeof(rosenbrock),Float64}, ydualdual)
+@benchmark ForwardDiff.value(ForwardDiff.Tag{typeof(rosenbrock),Float64}, ydualdual)
+
+# body of extract_gradient! in:
+# extract_gradient!(::Type{T}, result::DiffResults.DiffResult, dual::ForwardDiff.Dual) where T in ForwardDiff at /home/chriselrod/.julia/packages/ForwardDiff/N0wMF/src/gradient.jl:71
+inner_result = DiffResults.value!(c.inner_result, ForwardDiff.value(ForwardDiff.Tag{typeof(rosenbrock),Float64}, ydualdual));
+
+partials = ForwardDiff.partials(ForwardDiff.Tag{typeof(rosenbrock),Float64}, ydualdual);
+grad_inner = DiffResults.gradient(c.inner_result);
+
+
+typeof(grad_inner), typeof(partials)
+
+function Base.copyto!()
+
+end
+
+@benchmark copyto!(grad_inner, partials)
+
+
+@which DiffResults.gradient!(c.inner_result, partials)
+# forwards to derivative!(r::Union{DifferentiableObjects.GradientDiffResult{V,P,R}, DifferentiableObjects.HessianDiffResult{V,P,R,L} where L} where R where P where V, x::AbstractArray) in DifferentiableObjects at /home/chriselrod/.julia/dev/DifferentiableObjects/src/forward_diff_differentiable.jl:61
+# DifferentiableObjects/src/forward_diff_differentiable.jl:61: DiffResults.derivative!
+# 
+grad_inner = DiffResults.gradient(c.inner_result);
+# @code_warntype copyto!(grad_inner, partials)
+@which copyto!(grad_inner, partials)
+
+DiffResults.derivative!(c.inner_result, partials);
+# benchmark segfaults
+
+DiffResults.gradient!(c.inner_result, partials);
+# segfault
+
+
+@which copyto!(grad_inner, partials)
+copyto!(grad_inner, partials);
+# segfault
+
+# segfaults
+inner_result = DiffResults.gradient!(c.inner_result, ForwardDiff.partials(ForwardDiff.Tag{typeof(rosenbrock),Float64}, ydualdual))
+
+
+result = ForwardDiff.extract_gradient!(ForwardDiff.Tag{typeof(rosenbrock),Float64}, c.inner_result, ydualdual)
+
+
+# Segfaults
+ForwardDiff.gradient!(c.inner_result, c.f, xdual, c.gradient_config, Val{false}())
+
+DiffResults.value!(c.result, ForwardDiff.value(DiffResults.value(c.inner_result)))
+
+ydual
+
+ydual = ForwardDiff.vector_mode_dual_eval(f!, y, x, cfg)
+
+map!(d -> ForwardDiff.value(T,d), y, ydual)
+ForwardDiff.extract_jacobian!(T, result, ydual, N)
+ForwardDiff.extract_value!(T, result, y, ydual)
+
+
+
+
+
+
+
+
+
+
+ForwardDiff.jacobian!(hess, c, grad, x, jconfig, Val{false}())
+
+
+
+
+
+hessian!(obj2, initial_x)
+hessian(obj2)
+
+@which hessian!(obj2, initial_x)
+@which hessian(obj2)
+
 
 using StaticArrays, StaticOptim
 

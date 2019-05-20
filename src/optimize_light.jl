@@ -38,7 +38,9 @@ end
 #     nothing
 # end
 
-mutable struct BFGSState2{P,T,L,LT}
+abstract type AbstractBFGSState{P,T,L,LT} end
+
+mutable struct BFGSState{P,T,L,LT} <: AbstractBFGSState{P,T,L,LT}
     invH::ConstantFixedSizePaddedMatrix{P,P,T,L,LT}
     x_old::ConstantFixedSizePaddedVector{P,T,L,L}
     x_new::ConstantFixedSizePaddedVector{P,T,L,L}
@@ -47,37 +49,55 @@ mutable struct BFGSState2{P,T,L,LT}
     δ∇::ConstantFixedSizePaddedVector{P,T,L,L}
     u::ConstantFixedSizePaddedVector{P,T,L,L}
     s::ConstantFixedSizePaddedVector{P,T,L,L}
-    function BFGSState2{P,T,L,LT}(::UndefInitializer) where {P,T,L,LT}
+    function BFGSState{P,T,L,LT}(::UndefInitializer) where {P,T,L,LT}
         new{P,T,L,LT}()
     end
-    @generated function BFGSState2{P}(::UndefInitializer) where {P}
+    @generated function BFGSState{P}(::UndefInitializer) where {P}
         L = PaddedMatrices.calc_padding(P, Float64)
-        :(BFGSState2{$P,Float64,$L,$(P*L)}(undef))
+        :(BFGSState{$P,Float64,$L,$(P*L)}(undef))
     end
-    @generated function BFGSState2{P,T}(::UndefInitializer) where {P,T}
+    @generated function BFGSState{P,T}(::UndefInitializer) where {P,T}
         L = PaddedMatrices.calc_padding(P, T)
-        :(BFGSState2{$P,$T,$L,$(P*L)}(undef))
+        :(BFGSState{$P,$T,$L,$(P*L)}(undef))
     end
 end
-BFGSState2(::Val{P}, ::Type{T} = Float64) where {P,T} = BFGSState2{P,T}(undef)
-@inline Base.pointer(s::BFGSState2{P,T})  where {P,T} = Base.unsafe_convert(Ptr{T}, pointer_from_objref(s))
+BFGSState(::Val{P}, ::Type{T} = Float64) where {P,T} = BFGSState{P,T}(undef)
+@inline Base.pointer(s::BFGSState{P,T})  where {P,T} = Base.unsafe_convert(Ptr{T}, pointer_from_objref(s))
 
-@inline get_invH(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrMatrix{P,P,T,L,LT}(pointer(s))
-@inline get_x_old(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + LT*sizeof(T))
-@inline get_x_new(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+L)*sizeof(T))
-@inline get_∇_old(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+2L)*sizeof(T))
-@inline get_δ∇(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+3L)*sizeof(T))
-@inline get_u(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+4L)*sizeof(T))
-@inline get_s(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+5L)*sizeof(T))
+"""
+This type exists primarily to be the field of another mutable struct, so that you can get a pointer to this object.
+"""
+struct ConstantBFGSState{P,T,L,LT} <: AbstractBFGSState{P,T,L,LT}
+    invH::ConstantFixedSizePaddedMatrix{P,P,T,L,LT}
+    x_old::ConstantFixedSizePaddedVector{P,T,L,L}
+    x_new::ConstantFixedSizePaddedVector{P,T,L,L}
+    ∇_old::ConstantFixedSizePaddedVector{P,T,L,L}
+    # ∇_new::SizedSIMDVector{P,T,L}
+    δ∇::ConstantFixedSizePaddedVector{P,T,L,L}
+    u::ConstantFixedSizePaddedVector{P,T,L,L}
+    s::ConstantFixedSizePaddedVector{P,T,L,L}
+end
+struct PtrBFGSState{P,T,L,LT} <: AbstractBFGSState{P,T,L,LT}
+    ptr::Ptr{T}
+end
+@inline Base.pointer(state::PtrBFGSState) = state.ptr
 
-function initial_invH!(state::BFGSState2{P,T}) where {P,T}
-    invH = get_invH(state)
+@inline ref_invH(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrMatrix{P,P,T,L,LT}(pointer(s))
+@inline ref_x_old(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + LT*sizeof(T))
+@inline ref_x_new(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+L)*sizeof(T))
+@inline ref_∇_old(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+2L)*sizeof(T))
+@inline ref_δ∇(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+3L)*sizeof(T))
+@inline ref_u(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+4L)*sizeof(T))
+@inline ref_s(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+5L)*sizeof(T))
+
+function initial_invH!(state::AbstractBFGSState{P,T}) where {P,T}
+    invH = ref_invH(state)
     fill!(invH, zero(T))
     @inbounds for p = 1:P
         invH[p,p] = one(T)
     end
 end
-@inline optimum(s::BFGSState2{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + LT*sizeof(T))
+@inline optimum(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + LT*sizeof(T))
 
 @noinline linesearch_failure(iterations) = error("Linesearch failed to converge, reached maximum iterations $(iterations).")
 
@@ -93,13 +113,13 @@ function optimize_light!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
     # copyto!(state.x_new, x)
     # xinit = copy(x)
     # x_new = copy(x)
-    x_old = get_x_old(state)
-    ∇_old = get_∇_old(state)
-    invH = get_invH(state)
-    δ∇ = get_δ∇(state)
-    s = get_s(state)
-    u = get_u(state)
-    x_new = get_x_new(state)
+    x_old = ref_x_old(state)
+    ∇_old = ref_∇_old(state)
+    invH = ref_invH(state)
+    δ∇ = ref_δ∇(state)
+    s = ref_s(state)
+    u = ref_u(state)
+    x_new = ref_x_new(state)
     copyto!(x_old, x)
     initial_invH!(state)
     # @show x_old
@@ -187,7 +207,7 @@ function optimize_light!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
         end
         # SIMDArrays.vadd!(x_new, x_old, α_1, s)
         # ϕx_1 = f(x + α_1*s); f_calls += 1;
-        ϕx_1 = f(obj, state.x_new); f_calls += 1;
+        ϕx_1 = f(obj, x_new); f_calls += 1;
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
@@ -200,7 +220,7 @@ function optimize_light!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
             end
             # SIMDArrays.vadd!(x_new, x_old, α_2, s)
             # ϕx_1 = f(x + α_2*s); f_calls += 1;
-            ϕx_1 = f(obj, state.x_new); f_calls += 1;
+            ϕx_1 = f(obj, x_new); f_calls += 1;
         end
 
         # Backtrack until we satisfy sufficient decrease condition
@@ -248,7 +268,7 @@ function optimize_light!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
                 x_new[i] = x_old[i] + α_2*s[i]
             end
             # SIMDArrays.vadd!(x_new, x_old, α_2, s)
-            ϕx_0, ϕx_1 = ϕx_1, f(obj, state.x_new); f_calls += 1;
+            ϕx_0, ϕx_1 = ϕx_1, f(obj, x_new); f_calls += 1;
         end
         alpha, fpropose = α_2, ϕx_1
 
@@ -336,15 +356,15 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
     # copyto!(state.x_new, x)
     # xinit = copy(x)
     # x_new = copy(x)
-    x_old = get_x_old(state)
-    ∇_old = get_∇_old(state)
-    invH = get_invH(state)
-    δ∇ = get_δ∇(state)
-    s = get_s(state)
-    u = get_u(state)
-    x_new = get_x_new(state)
-    copyto!(x_old, x)
+    x_old = ref_x_old(state)
+    ∇_old = ref_∇_old(state)
+    invH = ref_invH(state)
+    δ∇ = ref_δ∇(state)
+    s = ref_s(state)
+    u = ref_u(state)
     initial_invH!(state)
+    x_new = ref_x_new(state)
+    copyto!(x_old, x)
     # hx = SMatrix{P,P,T}(I)
     # if !(hguess isa Nothing)
     #     hx = hguess * hx
@@ -403,6 +423,8 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
             c1 = fma(real(dot(δ∇, u)), c2*c2, c2)
             BFGS_update!(invH, s, u, c1, c2)
         end
+        # @show size(s), size(invH), size(∇)
+        # @show typeof(s), typeof(invH), typeof(∇)
         mul!(s, invH, ∇)
         # SIMDArrays.scale!(s, -one(eltype(s)))
         @inbounds @simd for i ∈ 1:L
@@ -437,7 +459,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
         # SIMDArrays.vadd!(x_new, x_old, α_1, s)
         # ϕx_1 = f(x + α_1*s); f_calls += 1;
         ϕx_1_before = ϕx_1
-        ϕx_1 = f(obj, state.x_new) * scale; f_calls += 1;
+        ϕx_1 = f(obj, x_new) * scale; f_calls += 1;
         # @show typeof(ϕx_1_before), typeof(ϕx_1), typeof(f(obj, state.x_new)), typeof(scale)
 
         # Hard-coded backtrack until we find a finite function value
@@ -451,7 +473,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
             end
             # SIMDArrays.vadd!(x_new, x_old, α_2, s)
             # ϕx_1 = f(x + α_2*s); f_calls += 1;
-            ϕx_1 = f(obj, state.x_new) * scale; f_calls += 1;
+            ϕx_1 = f(obj, x_new) * scale; f_calls += 1;
         end
 
         # Backtrack until we satisfy sufficient decrease condition
@@ -501,7 +523,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
                 x_new[i] = x_old[i] + α_2*s[i]
             end
             # SIMDArrays.vadd!(x_new, x_old, α_2::T, s)
-            ϕx_0, ϕx_1 = ϕx_1, f(obj, state.x_new) * scale; f_calls += 1;
+            ϕx_0, ϕx_1 = ϕx_1, f(obj, x_new) * scale; f_calls += 1;
         end
         alpha, fpropose = α_2, ϕx_1
 

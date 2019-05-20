@@ -1,10 +1,9 @@
 
 module DifferentiableObjects
 
-using   ForwardDiff
-
-using   DiffResults,
-        StaticArrays, # Explicitly support both
+using   ForwardDiff,
+        DiffResults,
+        # StaticArrays, # Explicitly support both
         SIMDPirates,
         PaddedMatrices,
         Parameters,
@@ -13,33 +12,31 @@ using   DiffResults,
         NaNMath,
         VectorizationBase
 
-using SIMDPirates: vadd, evmul, vbroadcast, Vec
+using SIMDPirates: vadd, vmul, evmul, vbroadcast, Vec
 using PaddedMatrices:   AbstractFixedSizePaddedVector, AbstractFixedSizePaddedMatrix,
                         AbstractMutableFixedSizePaddedVector, AbstractMutableFixedSizePaddedMatrix,
                         ConstantFixedSizePaddedVector, ConstantFixedSizePaddedMatrix,
                         MutableFixedSizePaddedVector, MutableFixedSizePaddedMatrix,
                         AbstractFixedSizePaddedArray, PtrVector, PtrMatrix
 
-import  NLSolversBase: AbstractObjective,
-        value!!,
-        value!,
-        value,
-        gradient,
-        gradient!,
-        value_gradient!,
-        value_gradient!!,
-        hessian!,
-        hessian!!
+# import  NLSolversBase: AbstractObjective,
+#         value!!,
+#         value!,
+#         value,
+#         gradient,
+#         gradient!,
+#         value_gradient!,
+#         value_gradient!!,
+#         hessian!,
+#         hessian!!
 
-export  DifferentiableObject,
+export  AbstractDifferentiableObject,
         GradientConfiguration,
         HessianConfiguration,
         OnceDifferentiable,
         TwiceDifferentiable,
         optimize_light!,
         optimize_scale!,
-        LightOptions,
-        BFGS,
         value,
         value!,
         gradient,
@@ -50,10 +47,12 @@ export  DifferentiableObject,
 
 
 
-abstract type DifferentiableObject{P} <: AbstractObjective end
+abstract type AbstractDifferentiableObject{P,T} end #<: AbstractObjective end
 
-const SizedVector{P,T} = Union{AbstractFixedSizePaddedVector{P,T},MVector{P,T}}
-const SizedSquareMatrix{P,T} = Union{AbstractFixedSizePaddedMatrix{P,P,T},MMatrix{P,P,T}}
+# const SizedVector{P,T} = Union{AbstractFixedSizePaddedVector{P,T},MVector{P,T}}
+# const SizedSquareMatrix{P,T} = Union{AbstractFixedSizePaddedMatrix{P,P,T},MMatrix{P,P,T}}
+const SizedVector{P,T} = AbstractFixedSizePaddedVector{P,T}
+const SizedSquareMatrix{P,T} = AbstractFixedSizePaddedMatrix{P,P,T}
 const SymmetricMatrix{P,T} = Symmetric{T, <: AbstractFixedSizePaddedMatrix{P,P,T}}
 # debug() = true
 

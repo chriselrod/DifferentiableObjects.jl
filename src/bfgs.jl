@@ -29,11 +29,11 @@
 
 # mutable struct
 abstract type Manifold end
-struct ManifoldObjective{M <: Manifold, P, T<:DifferentiableObject{P}} <: DifferentiableObject{P}
-    inner_obj::T
+struct ManifoldObjective{M <: Manifold, P, T, O <:AbstractDifferentiableObject{P,T}} <: AbstractDifferentiableObject{P,T}
+    inner_obj::O
 end
-function ManifoldObjective(::M, inner_obj::T) where {M <: Manifold, P, T <: DifferentiableObject{P}}
-    ManifoldObjective{M,P,T}(inner_obj)
+function ManifoldObjective(::M, inner_obj::O) where {M <: Manifold, P, T, O <: AbstractDifferentiableObject{P,T}}
+    ManifoldObjective{M,P,T,O}(inner_obj)
 end
 # @inline function Base.getproperty(MO::ManifoldObjective{M}, s::Symbol) where M
 #     if s == :inner_obj
@@ -46,7 +46,7 @@ end
 
 """Flat Euclidean space {R,C}^N, with projections equal to the identity."""
 struct Flat <: Manifold end
-ManifoldObjective(::Flat, inner_obj::DifferentiableObject) = inner_obj
+ManifoldObjective(::Flat, inner_obj::AbstractDifferentiableObject) = inner_obj
 @inline retract(::Flat, x) = x
 @inline retract!(::Flat,x) = x
 @inline project_tangent(::Flat, g, x) = g
@@ -352,11 +352,11 @@ end
 #     end
 #     return res
 # end
-# f_abschange(d::DifferentiableObject, state) = f_abschange(value(d), state.f_x_previous)
+# f_abschange(d::AbstractDifferentiableObject, state) = f_abschange(value(d), state.f_x_previous)
 # f_abschange(f_x::T, f_x_previous) where T = abs(f_x - f_x_previous)
 # x_abschange(state) = x_abschange(state.x, state.x_previous)
 # x_abschange(x, x_previous) = maxdiff(x, x_previous)
-# g_residual(d::DifferentiableObject) = g_residual(gradient(d))
+# g_residual(d::AbstractDifferentiableObject) = g_residual(gradient(d))
 # # g_residual(g) = norm(g, Inf)
 # @inline g_residual(g) = SIMDArrays.maximum_abs(g)
 # function gradient_convergence_assessment(state::AbstractOptimizerState, d, options)
@@ -395,7 +395,8 @@ end
 function BFGS_update_quote(Mₖ,Pₖ,stride_AD,T)
     T_size = sizeof(T)
     AD_stride = stride_AD * T_size
-    W = VectorizationBase.REGISTER_SIZE ÷ T_size
+    reg_size = VectorizationBase.REGISTER_SIZE
+    W = reg_size ÷ T_size
     Q, r = divrem(stride_AD, W) #Assuming stride_AD is a multiple of W
     if Q > 0
         r == 0 || throw("Number of rows plus padding $stride_AD not a multiple of register size: $(VectorizationBase.REGISTER_SIZE).")
@@ -405,7 +406,8 @@ function BFGS_update_quote(Mₖ,Pₖ,stride_AD,T)
         Q = 1
     end
     V = Vec{W,T}
-    C = VectorizationBase.CACHELINE_SIZE ÷ T_size
+    # C = VectorizationBase.CACHELINE_SIZE ÷ T_size
+
     common = quote
         vC1 = vbroadcast($V, c1)
         vC2 = vbroadcast($V, -c2)
@@ -432,12 +434,12 @@ function BFGS_update_quote(Mₖ,Pₖ,stride_AD,T)
                 # vSbc2 = vbroadcast($V, c2*unsafe_load(ptr_S + p-1 ))
                 # vUbc2 = vbroadcast($V, c2*unsafe_load(ptr_U + p-1 ))
                 Base.Cartesian.@nexprs $Q q -> begin # I am concerned over the size of these dependency chains.
-                    invH_q = vload($V, ptr_invH + $(VectorizationBase.REGISTER_SIZE)*(q-1) + $stride_AD*p)
-                    vU_q = vload($V, ptr_U + $(VectorizationBase.REGISTER_SIZE)*(q-1))
+                    invH_q = vload($V, ptr_invH + $reg_size*(q-1) + $stride_AD*p)
+                    vU_q = vload($V, ptr_U + $reg_size*(q-1))
                     invH_q = vmuladd(vU_q, vSbc2, invH_q)
-                    vS_q = vload($V, ptr_S + $(VectorizationBase.REGISTER_SIZE)*(q-1))
+                    vS_q = vload($V, ptr_S + $reg_size*(q-1))
                     invH_q = vmuladd(vS_q, vSbc1, vmuladd(vS_q, vUbc2, invH_q))
-                    vstore!(ptr_invH + $(VectorizationBase.REGISTER_SIZE)*(q-1) + $stride_AD*p, invH_q)
+                    vstore!(ptr_invH + $reg_size*(q-1) + $stride_AD*p, invH_q)
                 end
             end
             nothing

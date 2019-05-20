@@ -50,7 +50,7 @@ const GradResult{V,P,R} = Union{GradientDiffResult{V,P,R},HessianDiffResult{V,P,
 @inline DiffResults.derivative(result::GradResult{V,P,R}, ::Type{Val{1}}) where {V,P,R} = PtrVector{P,V,R}(pointer(result))
 @inline DiffResults.derivative(result::HessianDiffResult{V,P,R}, ::Type{Val{2}}) where {V,P,R} = PtrVector{P,V,R}(pointer(result) + sizeof(V)*R )
 @inline DiffResults.gradient(result::GradResult{V,P,R}) where {V,P,R} = PtrVector{P,V,R}(pointer(result))
-@inline DiffResults.hessian(result::HessianDiffResult{V,P,R})  where {V,P,R}= PtrMatrix{P,P,R}(pointer(result) + sizeof(V)*R )
+@inline DiffResults.hessian(result::HessianDiffResult{V,P,R})  where {V,P,R}= PtrMatrix{P,P,V,R}(pointer(result) + sizeof(V)*R )
 
 @inline DiffResults.value!(r::GradResult, x::Number) = (r.value = x; return r)
 # @inline DiffResults.value!(r::GradResult, x::AbstractArray) = (copyto!(value(r), x); return r)
@@ -103,7 +103,9 @@ end
 #     # HessianDiffResult(zero(T), similar(x), MMatrix{P,P,T}(undef))
 # end
 
-abstract type AutoDiffDifferentiable{P,T,F} <: DifferentiableObject{P} end
+abstract type AbstractAutoDiffDifferentiable{P,T} <: AbstractDifferentiableObject{P,T} end
+abstract type AbstractOnceDifferentiableObject{P,T} <: AbstractAutoDiffDifferentiable{P,T} end
+abstract type AbstractTwiceDifferentiableObject{P,T} <: AbstractAutoDiffDifferentiable{P,T} end
 abstract type Configuration{P,V,F} end
 
 struct GradientConfiguration{P,V,F,T,ND,DG,R} <: Configuration{P,V,F}
@@ -122,13 +124,13 @@ struct HessianConfiguration{P,V,F,T,T2,ND,DJ,DG,DG2, R_V, R_D, LSQM} <: Configur
 end
 
 
-struct TwiceDifferentiable{P,T,F,C<:Configuration{P,T,F}, SV_V <: SizedVector{P,T}} <: AutoDiffDifferentiable{P,T,F}
+struct TwiceDifferentiable{P,T,F,C<:Configuration{P,T,F}, SV_V <: SizedVector{P,T}} <: AbstractTwiceDifferentiableObject{P,T}
     x_f::SV_V # x used to evaluate f (stored in F)
     x_df::SV_V # x used to evaluate df (stored in DF)
     x_h::SV_V #??
     config::C
 end
-struct OnceDifferentiable{P,T,F,C<:GradientConfiguration{P,T,F}, SV_V <: SizedVector{P,T}} <: AutoDiffDifferentiable{P,T,F}
+struct OnceDifferentiable{P,T,F,C<:GradientConfiguration{P,T,F}, SV_V <: SizedVector{P,T}} <: AbstractOnceDifferentiableObject{P,T}
     x_f::SV_V# x used to evaluate f (stored in F)
     x_df::SV_V # x used to evaluate df (stored in DF)
     config::C
@@ -143,15 +145,28 @@ function GradientConfiguration(f::F, x::SizedVector{P,T}) where {F,T,P}
 
     GradientConfiguration(f, result, gconfig)
 end
+extract_tag(::T) where {T} = T
 function HessianConfiguration(f::F, x::SizedVector{P,T}) where {F,T,P}
     result = HessianDiffResult(x)
     chunk = Chunk(Val{P}())
-    tag = ForwardDiff.Tag(f, T)
+    # tag = ForwardDiff.Tag(f, T)
 
-    jacobian_config = ForwardDiff.JacobianConfig((f,ForwardDiff.gradient), DiffResults.gradient(result), x, chunk, tag)
-    gradient_config = ForwardDiff.GradientConfig(f, jacobian_config.duals[2], chunk, tag)
-    inner_result = GradientDiffResult(jacobian_config.duals[2])
-    gconfig = ForwardDiff.GradientConfig(f, x, chunk, tag)
+    # here we construct a JacobianConfig so that yduals is a PtrVector to DiffResults.gradient(inner_result)
+    tag_instance = ForwardDiff.Tag(f, T)
+    tag_type = extract_tag(tag_instance)
+    # @show tag
+    seeds = ForwardDiff.construct_seeds(ForwardDiff.Partials{P,T})
+    # inner_result = GradientDiffResult(jacobian_config.duals[2])
+    inner_result = GradientDiffResult{ForwardDiff.Dual{tag_type,T,P},P}(undef)
+    duals = (DiffResults.gradient(inner_result), similar(x, ForwardDiff.Dual{tag_type,T,P}))
+    jacobian_config = ForwardDiff.JacobianConfig{tag_type,T,P,typeof(duals)}(seeds, duals)
+
+
+    # jacobian_config = ForwardDiff.JacobianConfig((f,ForwardDiff.gradient), DiffResults.gradient(result), x, chunk, tag)
+    # jacobian_config = ForwardDiff.JacobianConfig((f,ForwardDiff.gradient), DiffResults.gradient(result), x, chunk, tag)
+    gradient_config = ForwardDiff.GradientConfig(f, jacobian_config.duals[2], chunk, tag_instance)
+    
+    gconfig = ForwardDiff.GradientConfig(f, x, chunk, tag_instance)
 
     HessianConfiguration(f, result, inner_result, jacobian_config, gradient_config, gconfig)
 end
@@ -183,15 +198,15 @@ end
 # end
 
 
-@inline DiffResults.value!(obj::AutoDiffDifferentiable, x::Real) = DiffResults.value!(obj.config.result, x)
+@inline DiffResults.value!(obj::AbstractAutoDiffDifferentiable, x::Real) = DiffResults.value!(obj.config.result, x)
 
-@inline value(obj::AutoDiffDifferentiable) = obj.config.result.value
-@inline gradient(obj::AutoDiffDifferentiable) = DiffResults.gradient(obj.config.result)
-# @inline gradient(obj::AutoDiffDifferentiable, i::Integer) = DiffResults.gradient(obj.config.result)[i]
+@inline value(obj::AbstractAutoDiffDifferentiable) = obj.config.result.value
+@inline gradient(obj::AbstractAutoDiffDifferentiable) = DiffResults.gradient(obj.config.result)
+# @inline gradient(obj::AbstractAutoDiffDifferentiable, i::Integer) = DiffResults.gradient(obj.config.result)[i]
 @inline hessian(obj::TwiceDifferentiable) = DiffResults.hessian(obj.config.result)
 
 
-@inline f(obj::AutoDiffDifferentiable, x) = obj.config.f(x)
+@inline f(obj::AbstractAutoDiffDifferentiable, x) = obj.config.f(x)
 
 # """
 # For DynamicHMC support. Copies data.
@@ -205,23 +220,23 @@ end
 #     DiffResults.ImmutableDiffResult(-obj.config.result.value, (-1 .* obj.config.result.grad,))
 # end
 
-@inline function df(obj::AutoDiffDifferentiable, x)
+@inline function df(obj::AbstractAutoDiffDifferentiable, x)
     ForwardDiff.gradient!(gradient(obj), obj.config.f, x, obj.config.gconfig, Val{false}())
 end
 
-@inline function fdf(obj::AutoDiffDifferentiable, x)
+@inline function fdf(obj::AbstractAutoDiffDifferentiable, x)
     # obj.config.result.grad = gradient(obj)
     ForwardDiff.gradient!(obj.config.result, obj.config.f, x, obj.config.gconfig, Val{false}())
     # DiffResults.value(obj.config.result)
     obj.config.result.value
 end
-@inline function scale_fdf(obj::AutoDiffDifferentiable, x, scale_target)
+@inline function scale_fdf(obj::AbstractAutoDiffDifferentiable, x, scale_target)
     # obj.config.result.grad = gradient(obj)
     scale = scale_gradient!(obj.config.result, obj.config.f, x, scale_target, obj.config.gconfig, Val{false}())
     # DiffResults.value(obj.config.result)
     obj.config.result.value, scale
 end
-@inline function scaled_fdf(obj::AutoDiffDifferentiable, x, scale)
+@inline function scaled_fdf(obj::AbstractAutoDiffDifferentiable, x, scale)
     # obj.config.result.grad = gradient(obj)
     scaled_gradient!(obj.config.result, obj.config.f, x, scale, obj.config.gconfig, Val{false}())
     # DiffResults.value(obj.config.result)
@@ -238,9 +253,11 @@ end
 # end
 
 @inline function (c::HessianConfiguration)(y, z)
-    c.inner_result.grad = y #Already true?
+    # c.inner_result.grad = y #Already true?
+    # @show typeof(y), typeof(z)
     ForwardDiff.gradient!(c.inner_result, c.f, z, c.gradient_config, Val{false}())
     DiffResults.value!(c.result, ForwardDiff.value(DiffResults.value(c.inner_result)))
+    # copyto!(y, DiffResults.gradient(c.inner_result))
     y
 end
 @inline function hessian!(c::HessianConfiguration, x::AbstractArray)
@@ -254,7 +271,7 @@ Force (re-)evaluation of the objective value at `x`.
 
 Returns `f(x)` and stores the value in `obj.F`
 """
-@inline function value!!(obj::AutoDiffDifferentiable, x)
+@inline function value!!(obj::AbstractAutoDiffDifferentiable, x)
     # obj.f_calls .+= 1
     # copyto!(obj.x_f, x)
     DiffResults.value!(obj, f(obj, x) )
@@ -265,7 +282,7 @@ end
 #
 # Returns `f(x)`, but does *not* store the value in `obj.F`
 # """
-# @inline function value(obj::AutoDiffDifferentiable, x)
+# @inline function value(obj::AbstractAutoDiffDifferentiable, x)
 #     if x != obj.x_f
 #         # obj.f_calls .+= 1
 #         value!!(obj, x)
@@ -277,7 +294,7 @@ Evaluates the objective value at `x`.
 
 Returns `f(x)` and stores the value in `obj.F`
 """
-@inline function value!(obj::AutoDiffDifferentiable, x)
+@inline function value!(obj::AbstractAutoDiffDifferentiable, x)
     # if x != obj.x_f
         value!!(obj, x)
     # end
@@ -289,7 +306,7 @@ Evaluates the gradient value at `x`
 
 This does *not* update `obj.DF`.
 """
-@inline function gradient(obj::AutoDiffDifferentiable, x)
+@inline function gradient(obj::AbstractAutoDiffDifferentiable, x)
     DF = gradient(obj)
     # if x != obj.x_df
         # tmp = copy(DF)
@@ -307,7 +324,7 @@ Evaluates the gradient value at `x`.
 
 Stores the value in `obj.DF`.
 """
-@inline function gradient!(obj::AutoDiffDifferentiable, x)
+@inline function gradient!(obj::AbstractAutoDiffDifferentiable, x)
     # if x != obj.x_df
         gradient!!(obj, x)
     # end
@@ -318,13 +335,13 @@ Force (re-)evaluation of the gradient value at `x`.
 
 Stores the value in `obj.DF`.
 """
-@inline function gradient!!(obj::AutoDiffDifferentiable, x)
+@inline function gradient!!(obj::AbstractAutoDiffDifferentiable, x)
     # obj.df_calls .+= 1
     copyto!(obj.x_df, x)
     df(obj, x)
 end
 
-@inline function value_gradient!(obj::AutoDiffDifferentiable, x)
+@inline function value_gradient!(obj::AbstractAutoDiffDifferentiable, x)
     # if x != obj.x_f && x != obj.x_df
         value_gradient!!(obj, x)
     # elseif x != obj.x_f
@@ -334,7 +351,7 @@ end
     # end
     value(obj)
 end
-@inline function value_gradient!!(obj::AutoDiffDifferentiable, x)
+@inline function value_gradient!!(obj::AbstractAutoDiffDifferentiable, x)
     # obj.f_calls .+= 1
     # obj.df_calls .+= 1
     # copyto!(obj.x_f, x)
@@ -342,13 +359,13 @@ end
     DiffResults.value!(obj, fdf(obj, x))
 end
 
-@inline function hessian!(obj::AutoDiffDifferentiable, x)
+@inline function hessian!(obj::AbstractAutoDiffDifferentiable, x)
     # if x != obj.x_h
         hessian!!(obj, x)
     # end
     nothing
 end
-@inline function hessian!!(obj::AutoDiffDifferentiable, x)
+@inline function hessian!!(obj::AbstractAutoDiffDifferentiable, x)
     # obj.h_calls .+= 1
     # copyto!(obj.x_h, x)
     hessian!(obj.config, x)
@@ -362,7 +379,7 @@ end
 #     return f(xdual)
 # end
 
-@inline function ForwardDiff.seed!(duals::MutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x,
                                     seed::ForwardDiff.Partials{N,V}) where {T,V,N,P}
     @inbounds for i in 1:N
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seed)
@@ -370,7 +387,7 @@ end
     return duals
 end
 
-@inline function ForwardDiff.seed!(duals::MutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x,
                                     seeds::NTuple{N,ForwardDiff.Partials{N,V}}) where {T,V,N,P}
     @inbounds for i in 1:N
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
@@ -378,7 +395,7 @@ end
     return duals
 end
 
-@inline function ForwardDiff.seed!(duals::MutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
                                     seed::ForwardDiff.Partials{N,V} = zero(ForwardDiff.Partials{N,V})) where {T,V,N,P}
     offset = index - 1
     @inbounds for i in 1:N
@@ -388,7 +405,7 @@ end
     return duals
 end
 
-@inline function ForwardDiff.seed!(duals::MutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
                                     seeds::NTuple{N,ForwardDiff.Partials{N,V}}, chunksize = N) where {T,V,N,P}
     offset = index - 1
     @inbounds for i in 1:chunksize
@@ -397,13 +414,14 @@ end
     end
     return duals
 end
-function ForwardDiff.extract_jacobian!(::Type{T}, result::MutableFixedSizePaddedMatrix{M,N}, ydual::AbstractArray, n) where {M,N,T}
+function ForwardDiff.extract_jacobian!(::Type{T}, result::AbstractMutableFixedSizePaddedMatrix{M,N}, ydual::AbstractArray, n) where {M,N,T}
     # out_reshaped = reshape(result, length(ydual), n)
     # @inbounds for col in 1:size(out_reshaped, 2), row in 1:size(out_reshaped, 1)
     #     out_reshaped[row, col] = partials(T, ydual[row], col)
     # end
     @inbounds for col in 1:N, row in 1:M
-        result[row, col] = ForwardDiff.partials(T, ydual[row], col)
+        # result[row, col] = ForwardDiff.partials(T, ydual[row], col)
+        result[row, col] = ForwardDiff.partials(T, ydual[col], row)
     end
     return result
 end
