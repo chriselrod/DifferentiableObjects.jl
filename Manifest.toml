@@ -112,7 +112,7 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[LoopVectorization]]
 deps = ["MacroTools", "SIMDPirates", "SLEEFPirates", "VectorizationBase"]
-git-tree-sha1 = "39306c8d016f92f55006c185e1c7feb2461def89"
+git-tree-sha1 = "71621520fd2df86b46c1024e05d39ecd1f550494"
 repo-rev = "master"
 repo-url = "https://github.com/chriselrod/LoopVectorization.jl"
 uuid = "bdcacae8-1622-11e9-2a5c-532679323890"
@@ -151,7 +151,7 @@ version = "1.1.0"
 
 [[PaddedMatrices]]
 deps = ["LinearAlgebra", "LoopVectorization", "Random", "SIMDPirates", "SLEEFPirates", "UnsafeArrays", "VectorizationBase", "VectorizedRNG"]
-git-tree-sha1 = "510934672f853167d63a546565dc391d1a280dc9"
+git-tree-sha1 = "dd1e4b428a259a491f20dc365c068e2b3f0a5db6"
 repo-rev = "master"
 repo-url = "https://github.com/chriselrod/PaddedMatrices.jl"
 uuid = "1f4db776-fdbc-11e8-06f3-e1707b8b4170"
