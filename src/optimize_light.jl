@@ -82,13 +82,14 @@ struct PtrBFGSState{P,T,L,LT} <: AbstractBFGSState{P,T,L,LT}
 end
 @inline Base.pointer(state::PtrBFGSState) = state.ptr
 
-@inline ref_invH(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrMatrix{P,P,T,L,LT}(pointer(s))
-@inline ref_x_old(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + LT*sizeof(T))
-@inline ref_x_new(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+L)*sizeof(T))
-@inline ref_∇_old(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+2L)*sizeof(T))
-@inline ref_δ∇(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+3L)*sizeof(T))
-@inline ref_u(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+4L)*sizeof(T))
-@inline ref_s(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + (LT+5L)*sizeof(T))
+
+@inline ref_invH(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrMatrix{P,P,T,L,LT,false}(pointer(s))
+@inline ref_x_old(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L,false}(pointer(s) + LT*sizeof(T))
+@inline ref_x_new(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L,false}(pointer(s) + (LT+L)*sizeof(T))
+@inline ref_∇_old(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L,false}(pointer(s) + (LT+2L)*sizeof(T))
+@inline ref_δ∇(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L,false}(pointer(s) + (LT+3L)*sizeof(T))
+@inline ref_u(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L,false}(pointer(s) + (LT+4L)*sizeof(T))
+@inline ref_s(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L,false}(pointer(s) + (LT+5L)*sizeof(T))
 
 function initial_invH!(state::AbstractBFGSState{P,T}) where {P,T}
     invH = ref_invH(state)
@@ -97,7 +98,7 @@ function initial_invH!(state::AbstractBFGSState{P,T}) where {P,T}
         invH[p,p] = one(T)
     end
 end
-@inline optimum(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L}(pointer(s) + LT*sizeof(T))
+@inline optimum(s::AbstractBFGSState{P,T,L,LT}) where {P,T,L,LT} = PtrVector{P,T,L,L,false}(pointer(s) + LT*sizeof(T))
 
 @noinline linesearch_failure(iterations) = error("Linesearch failed to converge, reached maximum iterations $(iterations).")
 
