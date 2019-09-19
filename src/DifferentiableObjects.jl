@@ -4,12 +4,11 @@ module DifferentiableObjects
 using   ForwardDiff,
         DiffResults,
         # StaticArrays, # Explicitly support both
+        NaNMath,
         SIMDPirates,
         PaddedMatrices,
         Parameters,
         LinearAlgebra,
-        Parameters,
-        NaNMath,
         VectorizationBase
 
 using SIMDPirates: vadd, vmul, evmul, vbroadcast, Vec

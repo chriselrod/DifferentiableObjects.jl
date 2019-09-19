@@ -378,8 +378,8 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
     sqrttol = sqrt(eps(T))
     α_0 = one(T)
     N = 200
-    f_calls = 0
-    g_calls = 0
+#    f_calls = 0
+#    g_calls = 0
     local scale::T
     local ϕ_0::T
     for n = 1:N
@@ -389,7 +389,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
         # ϕ_0 = value(d)
 
         if n == 1 # calculate scale
-            ϕ_0, scale = scale_fdf(obj, x_old, scale_target); f_calls +=1; g_calls +=1;
+            ϕ_0, scale = scale_fdf(obj, x_old, scale_target);# f_calls +=1; g_calls +=1;
             # @show scale
             ∇ = gradient(obj)
 
@@ -397,7 +397,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
             maximum(abs, ∇) < tol && return ϕ_0, scale
         else # update hessian
             ϕ_old = ϕ_0
-            ϕ_0 = scaled_fdf(obj, x_old, scale); f_calls +=1; g_calls +=1;
+            ϕ_0 = scaled_fdf(obj, x_old, scale);# f_calls +=1; g_calls +=1;
             ∇ = gradient(obj)
 
             norm(ϕ_0 - ϕ_old) <= tol*max(norm(ϕ_0),norm(ϕ_old)) && return ϕ_0, scale
@@ -460,7 +460,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
         # SIMDArrays.vadd!(x_new, x_old, α_1, s)
         # ϕx_1 = f(x + α_1*s); f_calls += 1;
         ϕx_1_before = ϕx_1
-        ϕx_1 = f(obj, x_new) * scale; f_calls += 1;
+        ϕx_1 = f(obj, x_new) * scale;# f_calls += 1;
         # @show typeof(ϕx_1_before), typeof(ϕx_1), typeof(f(obj, state.x_new)), typeof(scale)
 
         # Hard-coded backtrack until we find a finite function value
@@ -474,7 +474,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
             end
             # SIMDArrays.vadd!(x_new, x_old, α_2, s)
             # ϕx_1 = f(x + α_2*s); f_calls += 1;
-            ϕx_1 = f(obj, x_new) * scale; f_calls += 1;
+            ϕx_1 = f(obj, x_new) * scale;# f_calls += 1;
         end
 
         # Backtrack until we satisfy sufficient decrease condition
@@ -524,7 +524,7 @@ function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
                 x_new[i] = x_old[i] + α_2*s[i]
             end
             # SIMDArrays.vadd!(x_new, x_old, α_2::T, s)
-            ϕx_0, ϕx_1 = ϕx_1, f(obj, x_new) * scale; f_calls += 1;
+            ϕx_0, ϕx_1 = ϕx_1, f(obj, x_new) * scale; #f_calls += 1;
         end
         alpha, fpropose = α_2, ϕx_1
 
