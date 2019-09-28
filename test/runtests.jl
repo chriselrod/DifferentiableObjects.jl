@@ -14,7 +14,7 @@ end
 P = 6
 
 state = DifferentiableObjects.BFGSState2(Val(P));
-initial_x = fill!(PaddedMatrices.MutableFixedSizePaddedVector{P,Float64}(undef), 3.2);
+initial_x = fill!(PaddedMatrices.MutableFixedSizeVector{P,Float64}(undef), 3.2);
 ls2 = DifferentiableObjects.BackTracking2(Val(2));
 ls3 = DifferentiableObjects.BackTracking2(Val(3));
 obj = OnceDifferentiable(rosenbrock, initial_x);
@@ -46,7 +46,7 @@ function rosenbrock(x::AbstractArray{T}) where {T}
 end
 
 P = 6
-initial_x = fill!(PaddedMatrices.MutableFixedSizePaddedVector{P,Float64}(undef), 3.2);
+initial_x = fill!(PaddedMatrices.MutableFixedSizeVector{P,Float64}(undef), 3.2);
 obj2 = TwiceDifferentiable(rosenbrock, initial_x);
 
 using ForwardDiff, DiffResults, BenchmarkTools
@@ -75,7 +75,7 @@ y = grad;
 #     return result
 # end
 
-T, V, N = ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6,Tuple{MutableFixedSizePaddedArray{Tuple{6},ForwardDiff.Dual{ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6},1,6,6},MutableFixedSizePaddedArray{Tuple{6},ForwardDiff.Dual{ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6},1,6,6}};
+T, V, N = ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6,Tuple{MutableFixedSizeArray{Tuple{6},ForwardDiff.Dual{ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6},1,Tuple{1},6},MutableFixedSizeArray{Tuple{6},ForwardDiff.Dual{ForwardDiff.Tag{typeof(rosenbrock),Float64},Float64,6},1,Tuple{1},6}};
 
 @which ForwardDiff.vector_mode_dual_eval(f!, y, x, cfg)
 

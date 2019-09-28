@@ -41,14 +41,14 @@ end
 abstract type AbstractBFGSState{P,T,L,LT} end
 
 mutable struct BFGSState{P,T,L,LT} <: AbstractBFGSState{P,T,L,LT}
-    invH::ConstantFixedSizePaddedMatrix{P,P,T,L,LT}
-    x_old::ConstantFixedSizePaddedVector{P,T,L,L}
-    x_new::ConstantFixedSizePaddedVector{P,T,L,L}
-    ∇_old::ConstantFixedSizePaddedVector{P,T,L,L}
+    invH::ConstantFixedSizeMatrix{P,P,T,L,LT}
+    x_old::ConstantFixedSizeVector{P,T,L,L}
+    x_new::ConstantFixedSizeVector{P,T,L,L}
+    ∇_old::ConstantFixedSizeVector{P,T,L,L}
     # ∇_new::SizedSIMDVector{P,T,L}
-    δ∇::ConstantFixedSizePaddedVector{P,T,L,L}
-    u::ConstantFixedSizePaddedVector{P,T,L,L}
-    s::ConstantFixedSizePaddedVector{P,T,L,L}
+    δ∇::ConstantFixedSizeVector{P,T,L,L}
+    u::ConstantFixedSizeVector{P,T,L,L}
+    s::ConstantFixedSizeVector{P,T,L,L}
     function BFGSState{P,T,L,LT}(::UndefInitializer) where {P,T,L,LT}
         new{P,T,L,LT}()
     end
@@ -68,14 +68,14 @@ BFGSState(::Val{P}, ::Type{T} = Float64) where {P,T} = BFGSState{P,T}(undef)
 This type exists primarily to be the field of another mutable struct, so that you can get a pointer to this object.
 """
 struct ConstantBFGSState{P,T,L,LT} <: AbstractBFGSState{P,T,L,LT}
-    invH::ConstantFixedSizePaddedMatrix{P,P,T,L,LT}
-    x_old::ConstantFixedSizePaddedVector{P,T,L,L}
-    x_new::ConstantFixedSizePaddedVector{P,T,L,L}
-    ∇_old::ConstantFixedSizePaddedVector{P,T,L,L}
+    invH::ConstantFixedSizeMatrix{P,P,T,L,LT}
+    x_old::ConstantFixedSizeVector{P,T,L,L}
+    x_new::ConstantFixedSizeVector{P,T,L,L}
+    ∇_old::ConstantFixedSizeVector{P,T,L,L}
     # ∇_new::SizedSIMDVector{P,T,L}
-    δ∇::ConstantFixedSizePaddedVector{P,T,L,L}
-    u::ConstantFixedSizePaddedVector{P,T,L,L}
-    s::ConstantFixedSizePaddedVector{P,T,L,L}
+    δ∇::ConstantFixedSizeVector{P,T,L,L}
+    u::ConstantFixedSizeVector{P,T,L,L}
+    s::ConstantFixedSizeVector{P,T,L,L}
 end
 struct PtrBFGSState{P,T,L,LT} <: AbstractBFGSState{P,T,L,LT}
     ptr::Ptr{T}
@@ -106,7 +106,7 @@ end
 Optimum value is stored in state.x_old.
 
 """
-function optimize_light!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls::BackTracking2{order}, tol = 1e-8) where {P,T,L,order}
+function optimize_light!(state, obj, x::AbstractFixedSizeVector{P,T,L}, ls::BackTracking2{order}, tol = 1e-8) where {P,T,L,order}
     # res = DiffResults.GradientResult(x)
     # ls = BackTracking()
     # order = ordernum(bto)
@@ -288,7 +288,7 @@ function optimize_light!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls
 end
 
 
-@generated function update_state!(C::AbstractFixedSizePaddedArray{S,T,N,R,L}, B::AbstractFixedSizePaddedArray{S,T,N,R,L}, α::T) where {S,T,N,R,L}
+@generated function update_state!(C::AbstractFixedSizeArray{S,T,N,R,L}, B::AbstractFixedSizeArray{S,T,N,R,L}, α::T) where {S,T,N,R,L}
     T_size = sizeof(T)
     VL = min(VectorizationBase.REGISTER_SIZE ÷ T_size, L)
     VLT = VL * T_size
@@ -349,7 +349,7 @@ end
 Similar to optimize_light!, but it scales the function so that
 norm(gradient(f, initial_x)) ≈ 10
 """
-function optimize_scale!(state, obj, x::AbstractFixedSizePaddedVector{P,T,L}, ls::BackTracking2{order}, scale_target=T(10), tol = T(1e-8)) where {P,T,L,order}
+function optimize_scale!(state, obj, x::AbstractFixedSizeVector{P,T,L}, ls::BackTracking2{order}, scale_target=T(10), tol = T(1e-8)) where {P,T,L,order}
     # res = DiffResults.GradientResult(x)
     # ls = BackTracking()
     # order = ordernum(bto)

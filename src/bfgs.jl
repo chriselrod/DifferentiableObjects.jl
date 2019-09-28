@@ -461,8 +461,8 @@ function BFGS_update_quote(Mₖ,Pₖ,stride_AD,T)
     end
 end
 
-@generated function BFGS_update!(invH::Union{Symmetric{T,<:AbstractMutableFixedSizePaddedMatrix{P,P,T,R,L}},<:AbstractMutableFixedSizePaddedMatrix{P,P,T,R,L}},
-    s::AbstractMutableFixedSizePaddedVector{P,T,R}, u::AbstractMutableFixedSizePaddedVector{P,T,R}, c1::T, c2::T) where {P,T,L,R}
+@generated function BFGS_update!(invH::Union{Symmetric{T,<:AbstractMutableFixedSizeMatrix{P,P,T,R,L}},<:AbstractMutableFixedSizeMatrix{P,P,T,R,L}},
+    s::AbstractMutableFixedSizeVector{P,T,R}, u::AbstractMutableFixedSizeVector{P,T,R}, c1::T, c2::T) where {P,T,L,R}
 
     BFGS_update_quote(P,P,R,T)
 

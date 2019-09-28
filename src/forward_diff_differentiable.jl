@@ -15,8 +15,8 @@ end
 @generated ValM1(::Val{N}) where N = Val{N-1}()
 
 
-mutable struct GradientDiffResult{V,P,R} <: DiffResults.DiffResult{1,V,Tuple{ConstantFixedSizePaddedVector{P,V,R,R}}}
-    grad::ConstantFixedSizePaddedVector{P,V,R,R}
+mutable struct GradientDiffResult{V,P,R} <: DiffResults.DiffResult{1,V,Tuple{ConstantFixedSizeVector{P,V,R,R}}}
+    grad::ConstantFixedSizeVector{P,V,R,R}
     value::V
     function GradientDiffResult{V,P,R}(::UndefInitializer) where {V, P, R}
         new{V,P,R}()
@@ -25,13 +25,13 @@ mutable struct GradientDiffResult{V,P,R} <: DiffResults.DiffResult{1,V,Tuple{Con
         R = PaddedMatrices.calc_padding(P, V)
         :(GradientDiffResult{$V,$P,$R}(undef))
     end
-    function GradientDiffResult(g::ConstantFixedSizePaddedVector{P,V,R,R}, v::V = zero(V)) where {P,V,R}
+    function GradientDiffResult(g::ConstantFixedSizeVector{P,V,R,R}, v::V = zero(V)) where {P,V,R}
         GradientDiffResult{P,V,R}(g, v)
     end
 end
-mutable struct HessianDiffResult{V,P,R,L} <: DiffResults.DiffResult{2,V,Tuple{ConstantFixedSizePaddedVector{P,V,R,R},ConstantFixedSizePaddedMatrix{P,P,V,R,L}}}
-    grad::ConstantFixedSizePaddedVector{P,V,R,R}
-    hess::ConstantFixedSizePaddedMatrix{P,P,V,R,L}
+mutable struct HessianDiffResult{V,P,R,L} <: DiffResults.DiffResult{2,V,Tuple{ConstantFixedSizeVector{P,V,R,R},ConstantFixedSizeMatrix{P,P,V,R,L}}}
+    grad::ConstantFixedSizeVector{P,V,R,R}
+    hess::ConstantFixedSizeMatrix{P,P,V,R,L}
     value::V
     function HessianDiffResult{V,P,R,L}(::UndefInitializer) where {V,P,R,L}
         new{V,P,R,L}()
@@ -40,7 +40,7 @@ mutable struct HessianDiffResult{V,P,R,L} <: DiffResults.DiffResult{2,V,Tuple{Co
         N,R,L = PaddedMatrices.calc_NPL((P,P), V)
         :(HessianDiffResult{$V,$P,$R,$L}(undef))
     end
-    function GradientDiffResult(g::ConstantFixedSizePaddedVector{P,V,R,R}, H::ConstantFixedSizePaddedMatrix{P,P,V,R,L}, v::V = zero(V)) where {P,V,R,L}
+    function GradientDiffResult(g::ConstantFixedSizeVector{P,V,R,R}, H::ConstantFixedSizeMatrix{P,P,V,R,L}, v::V = zero(V)) where {P,V,R,L}
         GradientDiffResult{P,V,R,R}(g, H, v)
     end
 end
@@ -69,15 +69,15 @@ function DiffResults.derivative!(r::HessianDiffResult, x::AbstractArray, ::Type{
     copyto!(DiffResults.hessian(r), x)
     return r
 end
-function DiffResults.derivative!(r::GradResult{P,V,R}, x::ConstantFixedSizePaddedVector{P,V,R}) where {P,V,R}
+function DiffResults.derivative!(r::GradResult{P,V,R}, x::ConstantFixedSizeVector{P,V,R}) where {P,V,R}
     r.grad = x
     return r
 end
-function DiffResults.derivative!(r::GradResult{P,V,R}, x::ConstantFixedSizePaddedVector{P,V,R}, ::Type{Val{1}}) where {P,V,R}
+function DiffResults.derivative!(r::GradResult{P,V,R}, x::ConstantFixedSizeVector{P,V,R}, ::Type{Val{1}}) where {P,V,R}
     r.grad = x
     return r
 end
-function DiffResults.derivative!(r::HessianDiffResult{P,V,R,L}, x::ConstantFixedSizePaddedMatrix{P,P,V,R,L}, ::Type{Val{2}}) where {P,V,R,L}
+function DiffResults.derivative!(r::HessianDiffResult{P,V,R,L}, x::ConstantFixedSizeMatrix{P,P,V,R,L}, ::Type{Val{2}}) where {P,V,R,L}
     r.hess = x
     return r
 end
@@ -96,7 +96,7 @@ function GradientDiffResult(x::SizedVector{P,T}) where {T,P}
 end
 function HessianDiffResult(x::SizedVector{P,T}) where {T,P}
     HessianDiffResult{T,P}(undef)
-    # HessianDiffResult(zero(T), similar(x), MutableFixedSizePaddedMatrix{P,P,T}(undef))
+    # HessianDiffResult(zero(T), similar(x), MutableFixedSizeMatrix{P,P,T}(undef))
 end
 # function HessianDiffResult(x::MVector{P,T}) where {T,P}
 #     HessianDiffResult{T,P}(undef)
@@ -171,7 +171,7 @@ function HessianConfiguration(f::F, x::SizedVector{P,T}) where {F,T,P}
     HessianConfiguration(f, result, inner_result, jacobian_config, gradient_config, gconfig)
 end
 
-TwiceDifferentiable(f::F, ::Val{P}) where {F,P} = TwiceDifferentiable(f, MutableFixedSizePaddedVector{P,Float64}(undef))
+TwiceDifferentiable(f::F, ::Val{P}) where {F,P} = TwiceDifferentiable(f, MutableFixedSizeVector{P,Float64}(undef))
 function TwiceDifferentiable(f::F, x::SV_V) where {F,T,P,SV_V <: SizedVector{P,T}}
     TwiceDifferentiable(x, similar(x), similar(x), HessianConfiguration(f, x))
 end
@@ -308,16 +308,8 @@ This does *not* update `obj.DF`.
 """
 @inline function gradient(obj::AbstractAutoDiffDifferentiable, x)
     DF = gradient(obj)
-    # if x != obj.x_df
-        # tmp = copy(DF)
-        gradient!!(obj, x)
-        # @inbounds for i ∈ eachindex(tmp)
-        #     tmp[i], DF[i] = DF[i], tmp[i]
-        # end
-        DF
-        # return ConstantFixedSizePaddedArray(tmp)
-    # end
-    # DF
+    gradient!!(obj, x)
+    DF
 end
 """
 Evaluates the gradient value at `x`.
@@ -373,13 +365,13 @@ end
 
 
 
-# function ForwardDiff.vector_mode_dual_eval(f::F, x::MutableFixedSizePaddedVector, cfg::Union{JacobianConfig,GradientConfig}) where F
+# function ForwardDiff.vector_mode_dual_eval(f::F, x::MutableFixedSizeVector, cfg::Union{JacobianConfig,GradientConfig}) where F
 #     xdual = cfg.duals
 #     seed!(xdual, x, cfg.seeds)
 #     return f(xdual)
 # end
 
-@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizeVector{P,ForwardDiff.Dual{T,V,N}}, x,
                                     seed::ForwardDiff.Partials{N,V}) where {T,V,N,P}
     @inbounds for i in 1:N
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seed)
@@ -387,7 +379,7 @@ end
     return duals
 end
 
-@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizeVector{P,ForwardDiff.Dual{T,V,N}}, x,
                                     seeds::NTuple{N,ForwardDiff.Partials{N,V}}) where {T,V,N,P}
     @inbounds for i in 1:N
         duals[i] = ForwardDiff.Dual{T,V,N}(x[i], seeds[i])
@@ -395,7 +387,7 @@ end
     return duals
 end
 
-@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizeVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
                                     seed::ForwardDiff.Partials{N,V} = zero(ForwardDiff.Partials{N,V})) where {T,V,N,P}
     offset = index - 1
     @inbounds for i in 1:N
@@ -405,7 +397,7 @@ end
     return duals
 end
 
-@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizePaddedVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
+@inline function ForwardDiff.seed!(duals::AbstractMutableFixedSizeVector{P,ForwardDiff.Dual{T,V,N}}, x, index,
                                     seeds::NTuple{N,ForwardDiff.Partials{N,V}}, chunksize = N) where {T,V,N,P}
     offset = index - 1
     @inbounds for i in 1:chunksize
@@ -414,7 +406,7 @@ end
     end
     return duals
 end
-function ForwardDiff.extract_jacobian!(::Type{T}, result::AbstractMutableFixedSizePaddedMatrix{M,N}, ydual::AbstractArray, n) where {M,N,T}
+function ForwardDiff.extract_jacobian!(::Type{T}, result::AbstractMutableFixedSizeMatrix{M,N}, ydual::AbstractArray, n) where {M,N,T}
     # out_reshaped = reshape(result, length(ydual), n)
     # @inbounds for col in 1:size(out_reshaped, 2), row in 1:size(out_reshaped, 1)
     #     out_reshaped[row, col] = partials(T, ydual[row], col)

@@ -12,11 +12,11 @@ using   ForwardDiff,
         VectorizationBase
 
 using SIMDPirates: vadd, vmul, evmul, vbroadcast, Vec
-using PaddedMatrices:   AbstractFixedSizePaddedVector, AbstractFixedSizePaddedMatrix,
-                        AbstractMutableFixedSizePaddedVector, AbstractMutableFixedSizePaddedMatrix,
-                        ConstantFixedSizePaddedVector, ConstantFixedSizePaddedMatrix,
-                        MutableFixedSizePaddedVector, MutableFixedSizePaddedMatrix,
-                        AbstractFixedSizePaddedArray, PtrVector, PtrMatrix
+using PaddedMatrices:   AbstractFixedSizeVector, AbstractFixedSizeMatrix,
+                        AbstractMutableFixedSizeVector, AbstractMutableFixedSizeMatrix,
+                        ConstantFixedSizeVector, ConstantFixedSizeMatrix,
+                        MutableFixedSizeVector, MutableFixedSizeMatrix,
+                        AbstractFixedSizeArray, PtrVector, PtrMatrix
 
 # import  NLSolversBase: AbstractObjective,
 #         value!!,
@@ -48,11 +48,11 @@ export  AbstractDifferentiableObject,
 
 abstract type AbstractDifferentiableObject{P,T} end #<: AbstractObjective end
 
-# const SizedVector{P,T} = Union{AbstractFixedSizePaddedVector{P,T},MVector{P,T}}
-# const SizedSquareMatrix{P,T} = Union{AbstractFixedSizePaddedMatrix{P,P,T},MMatrix{P,P,T}}
-const SizedVector{P,T} = AbstractFixedSizePaddedVector{P,T}
-const SizedSquareMatrix{P,T} = AbstractFixedSizePaddedMatrix{P,P,T}
-const SymmetricMatrix{P,T} = Symmetric{T, <: AbstractFixedSizePaddedMatrix{P,P,T}}
+# const SizedVector{P,T} = Union{AbstractFixedSizeVector{P,T},MVector{P,T}}
+# const SizedSquareMatrix{P,T} = Union{AbstractFixedSizeMatrix{P,P,T},MMatrix{P,P,T}}
+const SizedVector{P,T} = AbstractFixedSizeVector{P,T}
+const SizedSquareMatrix{P,T} = AbstractFixedSizeMatrix{P,P,T}
+const SymmetricMatrix{P,T} = Symmetric{T, <: AbstractFixedSizeMatrix{P,P,T}}
 # debug() = true
 
 ###
