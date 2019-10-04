@@ -96,7 +96,7 @@ function GradientDiffResult(x::SizedVector{P,T}) where {T,P}
 end
 function HessianDiffResult(x::SizedVector{P,T}) where {T,P}
     HessianDiffResult{T,P}(undef)
-    # HessianDiffResult(zero(T), similar(x), MutableFixedSizeMatrix{P,P,T}(undef))
+    # HessianDiffResult(zero(T), similar(x), FixedSizeMatrix{P,P,T}(undef))
 end
 # function HessianDiffResult(x::MVector{P,T}) where {T,P}
 #     HessianDiffResult{T,P}(undef)
@@ -171,7 +171,7 @@ function HessianConfiguration(f::F, x::SizedVector{P,T}) where {F,T,P}
     HessianConfiguration(f, result, inner_result, jacobian_config, gradient_config, gconfig)
 end
 
-TwiceDifferentiable(f::F, ::Val{P}) where {F,P} = TwiceDifferentiable(f, MutableFixedSizeVector{P,Float64}(undef))
+TwiceDifferentiable(f::F, ::Val{P}) where {F,P} = TwiceDifferentiable(f, FixedSizeVector{P,Float64}(undef))
 function TwiceDifferentiable(f::F, x::SV_V) where {F,T,P,SV_V <: SizedVector{P,T}}
     TwiceDifferentiable(x, similar(x), similar(x), HessianConfiguration(f, x))
 end
@@ -365,7 +365,7 @@ end
 
 
 
-# function ForwardDiff.vector_mode_dual_eval(f::F, x::MutableFixedSizeVector, cfg::Union{JacobianConfig,GradientConfig}) where F
+# function ForwardDiff.vector_mode_dual_eval(f::F, x::FixedSizeVector, cfg::Union{JacobianConfig,GradientConfig}) where F
 #     xdual = cfg.duals
 #     seed!(xdual, x, cfg.seeds)
 #     return f(xdual)

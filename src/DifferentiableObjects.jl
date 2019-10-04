@@ -15,7 +15,7 @@ using SIMDPirates: vadd, vmul, evmul, vbroadcast, Vec
 using PaddedMatrices:   AbstractFixedSizeVector, AbstractFixedSizeMatrix,
                         AbstractMutableFixedSizeVector, AbstractMutableFixedSizeMatrix,
                         ConstantFixedSizeVector, ConstantFixedSizeMatrix,
-                        MutableFixedSizeVector, MutableFixedSizeMatrix,
+                        FixedSizeVector, FixedSizeMatrix,
                         AbstractFixedSizeArray, PtrVector, PtrMatrix
 
 # import  NLSolversBase: AbstractObjective,
